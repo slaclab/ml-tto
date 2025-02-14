@@ -16,6 +16,7 @@ from lcls_tools.common.measurements.screen_profile import (
 )
 from ml_tto.automatic_emittance.utils import validate_beamsize_measurement_result
 
+
 class MLQuadScanEmittance(QuadScanEmittance):
     scan_values: Optional[list[float]] = []
     n_initial_samples: PositiveInt = 3
@@ -41,35 +42,37 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 "Beamsize measurement screen must have a region of interest"
             )
         return v
-    
+
     def _evaluate(self, inputs):
-            # set quadrupole strength
-            self.magnet.bctrl = inputs["k"]
-            self.scan_values.append(inputs["k"])
+        # set quadrupole strength
+        self.magnet.bctrl = inputs["k"]
+        self.scan_values.append(inputs["k"])
 
-            # make beam size measurement
-            self.measure_beamsize()
-            fit_result = self._info[-1]
+        # make beam size measurement
+        self.measure_beamsize()
+        fit_result = self._info[-1]
 
-            # validate the beamsize measurement
-            validated_result, bb_penalty, log10_total_intensity = validate_beamsize_measurement_result(
-                fit_result, 
-                n_stds=self.bounding_box_factor, 
-                min_log10_intensity=self.min_log10_intensity
+        # validate the beamsize measurement
+        validated_result, bb_penalty, log10_total_intensity = (
+            validate_beamsize_measurement_result(
+                fit_result,
+                n_stds=self.bounding_box_factor,
+                min_log10_intensity=self.min_log10_intensity,
             )
+        )
 
-            # replace last element of info with validated result
-            self._info[-1] = validated_result
+        # replace last element of info with validated result
+        self._info[-1] = validated_result
 
-            # collect results
-            results = {
-                "bb_penalty": bb_penalty,
-                "log10_total_intensity": log10_total_intensity,
-                "x_rms_px": validated_result.rms_sizes[:, 0],
-                "y_rms_px": validated_result.rms_sizes[:, 1],
-            }
+        # collect results
+        results = {
+            "bb_penalty": bb_penalty,
+            "log10_total_intensity": log10_total_intensity,
+            "x_rms_px": validated_result.rms_sizes[:, 0],
+            "y_rms_px": validated_result.rms_sizes[:, 1],
+        }
 
-            return results
+        return results
 
     def perform_beamsize_measurements(self):
         """
@@ -95,7 +98,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
             warnings.simplefilter("ignore")
             generator = ExpectedImprovementGenerator(
                 vocs=vocs,
-                #beta=100,
+                # beta=100,
                 numerical_optimizer=GridOptimizer(n_grid_points=100),
                 n_interpolate_points=5,
                 n_monte_carlo_samples=64,

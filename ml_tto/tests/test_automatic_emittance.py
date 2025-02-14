@@ -81,7 +81,7 @@ class MockBeamline:
         result.centroids = np.zeros((args[0], 2))
 
         # simulate the beam losing intensity on the edges
-        intensity = 10**(6.0 - 0.5*np.abs(self.beamline.Q0.k1.numpy()))
+        intensity = 10 ** (6.0 - 0.5 * np.abs(self.beamline.Q0.k1.numpy()))
 
         result.total_intensities = np.ones(args[0]) * intensity
         result.metadata = MagicMock()
@@ -113,16 +113,16 @@ class AutomaticEmittanceMeasurementTest:
         self.mock_ctrl_options.return_value = {"enum_strs": tuple(self.options)}
         self.magnet_collection = create_magnet(area="GUNB")
         return super().setUp()
-    
+
     def test_evaluate_function(self):
         initial_beam = ParameterBeam.from_twiss(
-                    beta_x=torch.tensor(5.0),
-                    alpha_x=torch.tensor(5.0),
-                    emittance_x=torch.tensor(1e-8),
-                    beta_y=torch.tensor(3.0),
-                    alpha_y=torch.tensor(3.0),
-                    emittance_y=torch.tensor(1e-7),
-                )
+            beta_x=torch.tensor(5.0),
+            alpha_x=torch.tensor(5.0),
+            emittance_x=torch.tensor(1e-8),
+            beta_y=torch.tensor(3.0),
+            alpha_y=torch.tensor(3.0),
+            emittance_y=torch.tensor(1e-7),
+        )
 
         mock_beamline = MockBeamline(initial_beam)
 
@@ -157,7 +157,6 @@ class AutomaticEmittanceMeasurementTest:
         assert len(quad_scan._info) == 2
         assert np.all(np.isnan(quad_scan._info[-1].rms_sizes))
         assert np.all(np.isnan(quad_scan._info[-1].centroids))
-
 
     def test_automatic_emit_scan_with_mocked_beamsize_measurement(self):
         """
@@ -226,5 +225,3 @@ class AutomaticEmittanceMeasurementTest:
                 )
 
         plt.show()
-
-
