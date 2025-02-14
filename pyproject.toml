@@ -23,13 +23,15 @@ dependencies = [
     "pydantic",
     "h5py",
     "scikit-learn",
+    "xopt",
+    "cheetah-accelerator",
     "lcls_tools @ git+ssh://github.com/slaclab/lcls-tools.git"
 ]
 description = "Tools to support high level application development at LCLS using Python"
 dynamic = ["version"]
-name = "lcls-tools"
+name = "ml_tto"
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 [project.optional-dependencies]
 meme  = [
@@ -43,22 +45,15 @@ docs = [
     "sphinx_rtd_theme",
     "myst_parser"
 ]
-ml = [
-    "xopt",
-    "cheetah-accelerator"
-]    
 
 [project.urls]
-Homepage = "https://github.com/slaclab/lcls-tools"
+Homepage = "https://github.com/slaclab/ml-tto"
 
 [options]
 include_package_data = true
 
 [tool.setuptools.packages.find]
-include = ["lcls_tools*"]
+include = ["ml_tto*"]
 
 [project.license]
 file = "LICENSE"
-
-[tool.setuptools_scm]
-version_file = "lcls_tools/_version.py"
