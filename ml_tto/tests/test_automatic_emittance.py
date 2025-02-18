@@ -1,8 +1,6 @@
-from unittest import TestCase
 from unittest.mock import patch, Mock, MagicMock
 
 import numpy as np
-import pytest
 import torch
 from cheetah import Segment, Quadrupole, Drift, ParameterBeam
 
@@ -12,9 +10,6 @@ from lcls_tools.common.devices.screen import Screen
 from lcls_tools.common.frontend.plotting.emittance import plot_quad_scan_result
 from lcls_tools.common.image.roi import CircularROI
 from lcls_tools.common.image.processing import ImageProcessor
-from lcls_tools.common.measurements.emittance_measurement import (
-    EmittanceMeasurementResult,
-)
 from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
@@ -45,7 +40,7 @@ class MockBeamline:
             area="test", beam_path=["test"], sum_l_meters=None, l_eff=0.1
         )
 
-        self.roi = CircularROI(center=[1, 1], radius=1000)
+        self.roi = CircularROI(center=[1, 1], radius=500)
         self.screen_resolution = 1.0  # resolution of the screen in um / px
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
         self.beamsize_measurement.device = MagicMock(spec=Screen)
@@ -201,7 +196,7 @@ class TestAutomaticEmittance:
                     rmat=rmat,
                     design_twiss=design_twiss_ele,
                     n_initial_samples=3,
-                    n_iterations=5,
+                    n_iterations=10,
                     max_scan_range=[-10, 10],
                 )
 
@@ -230,7 +225,7 @@ class TestAutomaticEmittance:
                     rtol=1.0e-1,
                 )
 
-        # plt.show()
+        plt.show()
 
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
