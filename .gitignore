@@ -195,4 +195,6 @@ dkms.conf
 .vscode
 
 # development folder
-dev
+dev/
+
+*.h5

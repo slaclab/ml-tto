@@ -29,7 +29,9 @@ class TestUtils:
 
         validated_result, bb_penalties, log10_total_intensity = (
             validate_beamsize_measurement_result(
-                mock_result, min_log10_intensity=3.0, n_stds=2.0
+                mock_result,
+                roi=mock_result.metadata.image_processor.roi,
+                min_log10_intensity=3.0, n_stds=2.0
             )
         )
 
