@@ -1,5 +1,7 @@
 from copy import deepcopy
+import os
 import warnings
+import h5py
 import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import ExpectedImprovementGenerator
@@ -15,6 +17,8 @@ from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
 )
 from ml_tto.automatic_emittance.utils import validate_beamsize_measurement_result
+from ml_tto.saver import H5Saver
+from datetime import datetime
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -56,6 +60,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         validated_result, bb_penalty, log10_total_intensity = (
             validate_beamsize_measurement_result(
                 fit_result,
+                self.beamsize_measurement.image_processor.roi,
                 n_stds=self.bounding_box_factor,
                 min_log10_intensity=self.min_log10_intensity,
             )
@@ -125,3 +130,20 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 X.step()
 
         self.xopt_object = X
+
+    def measure(self):
+        """
+        Modify the result of the emittance measurement to include the images
+        """
+        result = super().measure()
+        result_dict = result.model_dump()
+
+        result_dict["image_data"] = [ele.model_dump() for ele in self._info]
+
+        if self.save_location is not None:
+            current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            saver = H5Saver()
+            saver.save_to_h5(
+                result_dict,
+                os.path.join(self.save_location, f"emittance_{current_datetime}.h5"),
+            )

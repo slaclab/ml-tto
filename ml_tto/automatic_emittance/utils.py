@@ -7,6 +7,7 @@ from lcls_tools.common.measurements.screen_profile import (
 
 def validate_beamsize_measurement_result(
     screen_measurement_result: ScreenBeamProfileMeasurementResult,
+    roi: ROI,
     min_log10_intensity: float = 3.0,
     n_stds: float = 2.0,
 ):
@@ -29,8 +30,6 @@ def validate_beamsize_measurement_result(
         The validated beamsize measurement result, bounding box penalties, and the log10 total intensity.
 
     """
-    roi = screen_measurement_result.metadata.image_processor.roi
-
     # get the total intensity of the images
     log10_total_intensity = np.log10(screen_measurement_result.total_intensities)
 
