@@ -25,7 +25,7 @@ dependencies = [
     "scikit-learn",
     "xopt",
     "cheetah-accelerator",
-    "lcls_tools @ git+ssh://github.com/slaclab/lcls-tools.git"
+    "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git"
 ]
 description = "Tools to support high level application development at LCLS using Python"
 dynamic = ["version"]
@@ -39,6 +39,7 @@ docs = [
     "sphinx_rtd_theme",
     "myst_parser"
 ]
+dev = ["pytest"]
 
 [project.urls]
 Homepage = "https://github.com/slaclab/ml-tto"
