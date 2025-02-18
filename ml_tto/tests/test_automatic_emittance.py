@@ -39,6 +39,7 @@ class MockBeamline:
 
         # add a property to the magnet to control the quad strength
         type(self.magnet).bctrl = property(self.get_bctrl, self.set_bctrl)
+        type(self.magnet).bact = property(self.get_bact)
 
         self.magnet.metadata = MagnetMetadata(
             area="test", beam_path=["test"], sum_l_meters=None, l_eff=0.1
@@ -58,6 +59,9 @@ class MockBeamline:
         self.initial_beam = initial_beam
 
     def get_bctrl(self, *args):
+        return self.beamline.Q0.k1.numpy()
+
+    def get_bact(self, *args):
         return self.beamline.Q0.k1.numpy()
 
     def set_bctrl(self, *args):
@@ -226,7 +230,7 @@ class TestAutomaticEmittance:
                     rtol=1.0e-1,
                 )
 
-        plt.show()
+        # plt.show()
 
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(

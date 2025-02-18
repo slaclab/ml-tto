@@ -1,8 +1,6 @@
 from copy import deepcopy
 import os
 import warnings
-import h5py
-import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import ExpectedImprovementGenerator
 from xopt.utils import get_local_region
@@ -19,6 +17,7 @@ from lcls_tools.common.measurements.screen_profile import (
 from ml_tto.automatic_emittance.utils import validate_beamsize_measurement_result
 from ml_tto.saver import H5Saver
 from datetime import datetime
+import time
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -51,6 +50,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # set quadrupole strength
         self.magnet.bctrl = inputs["k"]
         self.scan_values.append(inputs["k"])
+
+        # start by waiting one refesh cycle for bctrl
+        # then wait for bact to match bctrl
+        time.sleep(0.1)
+        while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
+            time.sleep(0.1)
 
         # make beam size measurement
         self.measure_beamsize()
@@ -147,3 +152,5 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 result_dict,
                 os.path.join(self.save_location, f"emittance_{current_datetime}.h5"),
             )
+
+        return result
