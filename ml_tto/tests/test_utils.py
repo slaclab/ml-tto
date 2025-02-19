@@ -19,19 +19,19 @@ class TestUtils:
         mock_result.total_intensities = np.array([1e4, 1e5, 1e2])
         rms_sizes = np.stack([np.array([1, 1]), np.array([2, 2]), np.array([3, 3])])
         mock_result.rms_sizes = rms_sizes
-        mock_result.centroids = (
-            np.stack([np.array([0, 0]), np.array([0, 0]), np.array([0, 0])]) + 1
-        )
+        centroids = np.stack([np.array([0, 0]), np.array([0, 0]), np.array([0, 0])]) + 2
+        mock_result.centroids = centroids
         mock_result.metadata = MagicMock()
+        radius = 2
         mock_result.metadata.image_processor.roi = CircularROI(
-            center=np.array([1, 1]), radius=2
+            center=np.array([1, 1]), radius=radius
         )
-
+        n_stds = 1.0
         validated_result, bb_penalties, log10_total_intensity = (
             validate_beamsize_measurement_result(
                 mock_result,
                 roi=mock_result.metadata.image_processor.roi,
-                min_log10_intensity=3.0, n_stds=2.0
+                min_log10_intensity=3.0, n_stds=n_stds
             )
         )
 
@@ -39,7 +39,9 @@ class TestUtils:
         # note that the last bb_penalty is NaN because the total intensity is below the threshold
         assert np.allclose(
             bb_penalties[:2],
-            np.array([np.linalg.norm(ele) - 2.0 for ele in rms_sizes[:2]]),
+            np.array([np.linalg.norm(
+                np.ones(2)*radius - (n_stds*size + centroid)
+                ) - radius for centroid, size in zip(centroids[:2], rms_sizes[:2])])
         )
         assert np.isnan(bb_penalties[2])
 
@@ -49,7 +51,7 @@ class TestUtils:
         assert np.allclose(validated_result.rms_sizes[0], np.array([1, 1]))
         assert np.isnan(validated_result.rms_sizes[1]).all()
         assert np.isnan(validated_result.rms_sizes[2]).all()
-        assert np.allclose(validated_result.centroids[0], np.array([1, 1]))
+        assert np.allclose(validated_result.centroids[0], np.array([2, 2]))
         assert np.isnan(validated_result.centroids[1]).all()
         assert np.isnan(validated_result.centroids[2]).all()
 

@@ -93,10 +93,10 @@ def calculate_bounding_box_coordinates(
     """
     return np.array(
         [
-            -1 * rms_size * n_stds / 2 + centroid,
-            rms_size * n_stds / 2 + centroid,
-            np.array((-1, 1)) * rms_size * n_stds / 2 + centroid,
-            np.array((1, -1)) * rms_size * n_stds / 2 + centroid,
+            -1 * rms_size * n_stds + centroid,
+            rms_size * n_stds + centroid,
+            np.array((-1, 1)) * rms_size * n_stds + centroid,
+            np.array((1, -1)) * rms_size * n_stds + centroid,
         ]
     )
 
