@@ -172,11 +172,13 @@ class MLQuadScanEmittance(QuadScanEmittance):
         result_dict["image_data"] = [ele.model_dump() for ele in self._info]
 
         if self.save_location is not None:
-            current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            saver = H5Saver()
-            saver.save_to_h5(
-                result_dict,
-                os.path.join(self.save_location, f"emittance_{current_datetime}.h5"),
-            )
-
+            try:
+                current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                saver = H5Saver()
+                saver.save_to_h5(
+                    result_dict,
+                    os.path.join(self.save_location, f"emittance_{current_datetime}.h5"),
+                )
+            except Exception as e:
+                warnings.warn(f"File saving failed. {e}", RuntimeWarning)
         return result
