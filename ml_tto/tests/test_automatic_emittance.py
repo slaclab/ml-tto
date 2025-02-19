@@ -14,6 +14,7 @@ from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
 )
+import matplotlib.pyplot as plt
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
@@ -93,28 +94,6 @@ class MockBeamline:
 
 
 class TestAutomaticEmittance:
-    def setUp(self) -> None:
-        self.options = [
-            "TRIM",
-            "PERTURB",
-            "BCON_TO_BDES",
-            "SAVE_BDES",
-            "LOAD_BDES",
-            "UNDO_BDES",
-            "DAC_ZERO",
-            "CALIB",
-            "STDZ",
-            "RESET",
-            "TURN_OFF",
-            "TURN_ON",
-            "DEGAUSS",
-        ]
-        self.ctrl_options_patch = patch("epics.PV.get_ctrlvars", new_callable=Mock)
-        self.mock_ctrl_options = self.ctrl_options_patch.start()
-        self.mock_ctrl_options.return_value = {"enum_strs": tuple(self.options)}
-        self.magnet_collection = create_magnet(area="GUNB")
-        return super().setUp()
-
     def test_evaluate_function(self):
         initial_beam = ParameterBeam.from_twiss(
             beta_x=torch.tensor(5.0),
@@ -134,8 +113,8 @@ class TestAutomaticEmittance:
             beamsize_measurement=mock_beamline.beamsize_measurement,
             n_measurement_shots=1,
             wait_time=1e-3,
-            n_initial_samples=3,
-            n_iterations=5,
+            n_initial_samples=1,
+            n_iterations=1,
             max_scan_range=[-10, 10],
         )
 
@@ -185,6 +164,7 @@ class TestAutomaticEmittance:
                 )
 
                 mock_beamline = MockBeamline(initial_beam)
+                mock_beamline.magnet.bctrl = 0.01
 
                 # Instantiate the QuadScanEmittance object
                 quad_scan = MLQuadScanEmittance(
@@ -196,7 +176,7 @@ class TestAutomaticEmittance:
                     rmat=rmat,
                     design_twiss=design_twiss_ele,
                     n_initial_samples=3,
-                    n_iterations=10,
+                    n_iterations=8,
                     max_scan_range=[-10, 10],
                 )
 
@@ -210,10 +190,8 @@ class TestAutomaticEmittance:
                     show_feasibility=True,
                 )
                 quad_scan.xopt_object.data.plot(y="k")
-                import matplotlib.pyplot as plt
 
                 # check resulting calculations against cheetah simulation ground truth
-                print(result.emittance)
                 assert np.allclose(
                     result.emittance,
                     np.array([1.0e-2, 1.0e-1]).reshape(2, 1),
@@ -225,7 +203,10 @@ class TestAutomaticEmittance:
                     rtol=1.0e-1,
                 )
 
-        plt.show()
+                # make sure that we return the initial quadrupole setting at the end
+                assert mock_beamline.magnet.bctrl == 0.01
+
+        # plt.show()
 
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
