@@ -206,8 +206,6 @@ class TestAutomaticEmittance:
                 # make sure that we return the initial quadrupole setting at the end
                 assert mock_beamline.magnet.bctrl == 0.01
 
-        # plt.show()
-
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
             beta_x=torch.tensor(5.0),
