@@ -1,6 +1,7 @@
 from copy import deepcopy
 import os
 import warnings
+import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import ExpectedImprovementGenerator, UpperConfidenceBoundGenerator
 from xopt.utils import get_local_region
@@ -18,6 +19,7 @@ from ml_tto.automatic_emittance.utils import validate_beamsize_measurement_resul
 from ml_tto.saver import H5Saver
 from datetime import datetime
 import time
+from epics import caget, caput
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -26,6 +28,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     n_iterations: PositiveInt = 5
     max_scan_range: Optional[list[float]] = None
     xopt_object: Optional[Xopt] = None
+    shutter_pv: Optional[str] = None
 
     bounding_box_factor: float = 2.0
     min_log10_intensity: float = 3.0
@@ -93,6 +96,31 @@ class MLQuadScanEmittance(QuadScanEmittance):
             print(f"Results: {results}")
 
         return results
+    
+    def setup_beamsize_measurements(self):
+        """
+        measure the background and determine log10 intensity threshold
+        """
+        if self.shutter_pv is None:
+            raise warnings.warn(
+                "No shutter PV provided, skipping background measurement" 
+                "and intensity threshold determination"
+            )
+            return
+        
+        # close shutter
+        caput(self.shutter_pv,0) 
+        time.sleep(1)
+
+        background_images = []
+        for i in range(20):
+            background_images += [self.beamsize_measurement.screen.image]
+            time.sleep(0.2)
+
+        background_image = np.mean(background_images, axis=0)
+
+        caput(self.shutter_pv,1) 
+        time.sleep(1)
 
     def perform_beamsize_measurements(self):
         """
