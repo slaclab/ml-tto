@@ -130,8 +130,8 @@ class TestAutomaticEmittance:
         # test case where k > 5.0 -- should return low intensity and NaN beam sizes
         inputs = {"k": 10.0}
         result = quad_scan._evaluate(inputs)
-        assert np.all(np.isnan(result["x_rms_px"]))
-        assert np.all(np.isnan(result["y_rms_px"]))
+        assert np.all(np.isnan(result["scaled_x_rms_px"]))
+        assert np.all(np.isnan(result["scaled_y_rms_px"]))
         assert np.all(np.isnan(result["bb_penalty"]))
 
         assert len(quad_scan._info) == 2
