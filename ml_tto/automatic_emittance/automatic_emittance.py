@@ -30,6 +30,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     bounding_box_factor: float = 2.0
     min_log10_intensity: float = 3.0
     visualize_bo: bool = False
+    verbose: bool = False
 
     @field_validator("beamsize_measurement", mode="after")
     def validate_beamsize_measurement(cls, v, info):
@@ -49,15 +50,20 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     def _evaluate(self, inputs):
         # set quadrupole strength
+        if self.verbose:
+            print(f"Setting quadrupole strength to {inputs['k']}")
         self.magnet.bctrl = inputs["k"]
         self.scan_values.append(inputs["k"])
 
         # start by waiting one refesh cycle for bctrl
         # then wait for bact to match bctrl
-        time.sleep(0.1)
+        # bctrl referesh rate is less than 10 ms
+        time.sleep(0.02)
         while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
-            print("sleeping")
-            time.sleep(0.1)
+            time.sleep(0.05)
+        
+        if self.verbose:
+            print(f"Quadrupole strength bact is {self.magnet.bact}")
 
         # make beam size measurement
         self.measure_beamsize()
@@ -83,6 +89,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
             "scaled_x_rms_px": validated_result.rms_sizes[:, 0] / 100,
             "scaled_y_rms_px": validated_result.rms_sizes[:, 1] / 100,
         }
+        if self.verbose:
+            print(f"Results: {results}")
 
         return results
 
@@ -99,6 +107,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 "bb_penalty": ["LESS_THAN", 0.0],
                 "log10_total_intensity": ["GREATER_THAN", self.min_log10_intensity],
             },
+            observables=["scaled_x_rms_px", "scaled_y_rms_px"],
         )
         y_vocs = deepcopy(x_vocs)
         y_vocs.objectives = {"scaled_y_rms_px": "MINIMIZE"}
