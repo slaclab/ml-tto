@@ -124,7 +124,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
             warnings.simplefilter("ignore")
             generator = UpperConfidenceBoundGenerator(
                 vocs=x_vocs,
-                beta=1000.0,
+                beta=100.0,
                 numerical_optimizer=GridOptimizer(n_grid_points=100),
                 n_interpolate_points=5,
                 n_monte_carlo_samples=64,
@@ -140,14 +140,19 @@ class MLQuadScanEmittance(QuadScanEmittance):
             X.random_evaluate(self.n_initial_samples, custom_bounds=local_region)
 
             # run iterations for x/y -- ignore warnings from UCB generator
-            for i in range(self.n_iterations):
-                if i % 2 == 0:
-                    X.vocs = x_vocs
-                    X.generator.vocs = x_vocs
-                else:
-                    X.vocs = y_vocs
-                    X.generator.vocs = y_vocs
+            for _ in range(self.n_iterations):
+                if self.visualize_bo:
+                    X.generator.train_model()
+                    X.generator.visualize_model(
+                        exponentiate=True,
+                        show_feasibility=True,
+                    )
 
+                X.step()
+
+            X.vocs = y_vocs
+            X.generator.vocs = y_vocs
+            for _ in range(self.n_iterations):
                 if self.visualize_bo:
                     X.generator.train_model()
                     X.generator.visualize_model(
