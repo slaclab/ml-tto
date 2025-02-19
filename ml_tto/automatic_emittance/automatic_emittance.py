@@ -2,7 +2,7 @@ from copy import deepcopy
 import os
 import warnings
 from xopt import Xopt, Evaluator, VOCS
-from xopt.generators.bayesian import ExpectedImprovementGenerator
+from xopt.generators.bayesian import ExpectedImprovementGenerator, UpperConfidenceBoundGenerator
 from xopt.utils import get_local_region
 from xopt.numerical_optimizer import GridOptimizer
 from lcls_tools.common.measurements.emittance_measurement import QuadScanEmittance
@@ -29,6 +29,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     bounding_box_factor: float = 2.0
     min_log10_intensity: float = 3.0
+    visualize_bo: bool = False
 
     @field_validator("beamsize_measurement", mode="after")
     def validate_beamsize_measurement(cls, v, info):
@@ -55,6 +56,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # then wait for bact to match bctrl
         time.sleep(0.1)
         while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
+            print("sleeping")
             time.sleep(0.1)
 
         # make beam size measurement
@@ -78,8 +80,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         results = {
             "bb_penalty": bb_penalty,
             "log10_total_intensity": log10_total_intensity,
-            "x_rms_px": validated_result.rms_sizes[:, 0],
-            "y_rms_px": validated_result.rms_sizes[:, 1],
+            "scaled_x_rms_px": validated_result.rms_sizes[:, 0] / 100,
+            "scaled_y_rms_px": validated_result.rms_sizes[:, 1] / 100,
         }
 
         return results
@@ -90,49 +92,64 @@ class MLQuadScanEmittance(QuadScanEmittance):
         """
         # define the optimization problem
         k_range = self.max_scan_range if self.max_scan_range is not None else [-10, 10]
-        vocs = VOCS(
+        x_vocs = VOCS(
             variables={"k": k_range},
-            objectives={"x_rms_px": "MINIMIZE"},
+            objectives={"scaled_x_rms_px": "MINIMIZE"},
             constraints={
                 "bb_penalty": ["LESS_THAN", 0.0],
                 "log10_total_intensity": ["GREATER_THAN", self.min_log10_intensity],
             },
         )
+        y_vocs = deepcopy(x_vocs)
+        y_vocs.objectives = {"scaled_y_rms_px": "MINIMIZE"}
 
         self.scan_values = []
 
         evaluator = Evaluator(function=self._evaluate)
 
+        # get current value of k
+        current_k = self.magnet.bctrl
+
         # ignore warnings from UCB generator and Xopt
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            generator = ExpectedImprovementGenerator(
-                vocs=vocs,
-                # beta=100,
+            generator = UpperConfidenceBoundGenerator(
+                vocs=x_vocs,
+                beta=1000.0,
                 numerical_optimizer=GridOptimizer(n_grid_points=100),
                 n_interpolate_points=5,
                 n_monte_carlo_samples=64,
             )
 
-            X = Xopt(vocs=vocs, evaluator=evaluator, generator=generator)
+            X = Xopt(vocs=x_vocs, evaluator=evaluator, generator=generator)
+
+            # evaluate the current point
+            X.evaluate_data({"k": current_k})
 
             # get local region around current value and make some samples
-            local_region = get_local_region({"k": self.magnet.bctrl}, vocs)
+            local_region = get_local_region({"k": current_k}, x_vocs)
             X.random_evaluate(self.n_initial_samples, custom_bounds=local_region)
 
-            # run iterations for x -- ignore warnings from UCB generator
+            # run iterations for x/y -- ignore warnings from UCB generator
             for i in range(self.n_iterations):
+                if i % 2 == 0:
+                    X.vocs = x_vocs
+                    X.generator.vocs = x_vocs
+                else:
+                    X.vocs = y_vocs
+                    X.generator.vocs = y_vocs
+
+                if self.visualize_bo:
+                    X.generator.train_model()
+                    X.generator.visualize_model(
+                        exponentiate=True,
+                        show_feasibility=True,
+                    )
+
                 X.step()
 
-            # run iterations for y
-            new_vocs = deepcopy(vocs)
-            new_vocs.objectives = {"y_rms_px": "MINIMIZE"}
-
-            X.vocs = new_vocs
-            X.generator.vocs = new_vocs
-
-            for i in range(self.n_iterations):
-                X.step()
+        # reset quadrupole strength to original value
+        self.magnet.bctrl = current_k
 
         self.xopt_object = X
 
