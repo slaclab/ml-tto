@@ -99,3 +99,37 @@ class ImageProjectionFit(ImageProjectionFit):
         )
 
         return result
+    
+
+class RecursiveImageProjectionFit(ImageProjectionFit):
+    n_stds: PositiveFloat = Field(4.0, description="Number of standard deviations to use for the bounding box")
+
+    def _fit_image(self, image: np.ndarray) -> ImageProjectionFitResult:
+        fresult = super()._fit_image(image)
+        
+        rms_size = np.array(fresult.rms_size)
+        centroid = np.array(fresult.centroid)
+
+        if np.any(np.isnan(rms_size)):
+            return fresult
+        else:
+            n_stds = self.n_stds
+            
+            bbox = np.array(
+                [
+                    -1 * rms_size * n_stds + centroid,
+                    rms_size * n_stds + centroid,
+                ]
+            ).astype(int)
+            bbox = np.clip(bbox, 0, image.shape[0])
+            
+            # crop the image based on the bounding box
+            cropped_image = image[
+                bbox[0][1] : bbox[1][1], bbox[0][0] : bbox[1][0]
+            ]
+            
+            result = super()._fit_image(cropped_image)
+
+            # add centroid offset to the result
+            result.centroid += centroid
+            return result
