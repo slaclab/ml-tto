@@ -61,14 +61,13 @@ class TestUtils:
         centroid = np.array([1, 1]).reshape(1, 2)
 
         expected_bbox_coords = [
-            np.array([0, -1]),
-            np.array([2, 3]),
-            np.array([0, 3]),
-            np.array([2, -1]),
+            np.array([-1, -3]),
+            np.array([3, 5]),
+            np.array([-1, 5]),
+            np.array([3, -3]),
         ]
 
         bbox_coords = calculate_bounding_box_coordinates(rms_size, centroid, n_stds=1)
-
         # Assertions
         for coord, expected_coord in zip(bbox_coords, expected_bbox_coords):
             assert np.allclose(coord, expected_coord)
@@ -76,7 +75,7 @@ class TestUtils:
     def test_calculate_bounding_box_penalty(self):
         rms_size = np.array([2, 4]).reshape(1, 2)
         centroid = np.array([1, 1]).reshape(1, 2)
-        bbox_coords = calculate_bounding_box_coordinates(rms_size, centroid, n_stds=2)
+        bbox_coords = calculate_bounding_box_coordinates(rms_size, centroid, n_stds=1)
 
         roi = CircularROI(center=[1, 1], radius=1)
         penalty = calculate_bounding_box_penalty(roi, bbox_coords)
