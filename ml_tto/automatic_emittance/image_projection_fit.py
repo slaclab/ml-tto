@@ -1,13 +1,11 @@
-from abc import ABC, abstractmethod
-from typing import Optional, List
+from typing import Optional
 import warnings
 
 import numpy as np
 from numpy import ndarray
-from pydantic import BaseModel, ConfigDict, PositiveFloat, Field
+from pydantic import ConfigDict, PositiveFloat, Field, PositiveInt, confloat
 import scipy
 
-from lcls_tools.common.data.fit.method_base import MethodBase
 from lcls_tools.common.data.fit.methods import GaussianModel
 from lcls_tools.common.data.fit.projection import ProjectionFit
 from lcls_tools.common.image.fit import ImageProjectionFit, ImageProjectionFitResult
@@ -31,14 +29,16 @@ class MLProjectionFit(ProjectionFit):
                    forward function
         from our model compared to distribution data)
     """
+    relative_filter_size: confloat(ge=0, le=1) = 0.0
+
 
     def model_setup(self, projection_data=np.ndarray) -> None:
         """sets up the model and init_values/priors"""
         # apply a gaussian filter to the data to smooth
-        filter_size = int(len(projection_data) / 100)
+        filter_size = int(len(projection_data) * self.relative_filter_size)
 
         if filter_size > 0:
-            projection_data = scipy.ndimage.gaussian_filter1d(projection_data,filter_size)
+            projection_data = scipy.ndimage.gaussian_filter1d(projection_data, filter_size)
 
         self.model.profile_data = projection_data
 
@@ -50,28 +50,30 @@ class ImageProjectionFit(ImageProjectionFit):
     the x/y projections. The default configuration uses a Gaussian fitting of the
     profile with prior distributions placed on the model parameters.
     """
-    projection_fit_method: Optional[MethodBase] = GaussianModel(use_priors=True)
+    projection_fit: Optional[ProjectionFit] = MLProjectionFit(
+        model = GaussianModel(use_priors=True), relative_filter_size=0.01
+        ) 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
 
     def _fit_image(self, image: ndarray) -> ImageProjectionFitResult:
         x_projection = np.array(np.sum(image, axis=0))
         y_projection = np.array(np.sum(image, axis=1))
 
-        # measure mean and noise of projections
-        projection_stats = []
-        for ele in [x_projection, y_projection]:
-            projection_stats.append([np.mean(ele), np.std(ele), len(ele)])
-
-        proj_fit = MLProjectionFit(model=self.projection_fit_method)
-
-        x_parameters = proj_fit.fit_projection(x_projection)
-        y_parameters = proj_fit.fit_projection(y_projection)
+        x_parameters = self.projection_fit.fit_projection(x_projection)
+        y_parameters = self.projection_fit.fit_projection(y_projection)
 
         # checks to validate the fit results
         direction = ["x","y"]
+        projections = [x_projection, y_projection]
         for i, params in enumerate([x_parameters, y_parameters]):
+            # determine the noise around the projection fit
+            x = np.arange(len(projections[i]))
+            noise_std = np.std(self.projection_fit.model.forward(x , params) - projections[i])
+            print(noise_std*3, params["amplitude"])
+
             # if the amplitude of the the fit is smaller than noise then reject
-            if params["amplitude"] < projection_stats[i][1]:
+            if params["amplitude"] < noise_std*3:
                 for name in params.keys():
                     params[name] = np.nan
 
@@ -80,7 +82,7 @@ class ImageProjectionFit(ImageProjectionFit):
                 continue
 
             # if 4*sigma does not fit on the projection then its too big
-            if 4 * params["sigma"] > projection_stats[i][2]:
+            if 4 * params["sigma"] > len(projections[i]):
                 for name in params.keys():
                     params[name] = np.nan
 
@@ -95,7 +97,7 @@ class ImageProjectionFit(ImageProjectionFit):
             x_projection_fit_parameters=x_parameters,
             y_projection_fit_parameters=y_parameters,
             image=image,
-            projection_fit_method=self.projection_fit_method,
+            projection_fit_method=self.projection_fit.model,
         )
 
         return result
