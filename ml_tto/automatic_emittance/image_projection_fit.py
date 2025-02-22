@@ -5,11 +5,16 @@ import numpy as np
 from numpy import ndarray
 from pydantic import ConfigDict, PositiveFloat, Field, PositiveInt, confloat
 import scipy
+from scipy.stats import norm, gamma, uniform
 
 from lcls_tools.common.data.fit.methods import GaussianModel
 from lcls_tools.common.data.fit.projection import ProjectionFit
 from lcls_tools.common.image.fit import ImageProjectionFit, ImageProjectionFitResult
 
+from lcls_tools.common.data.fit.method_base import (
+    ModelParameters,
+    Parameter,
+)
 
 class MLProjectionFit(ProjectionFit):
     """
@@ -42,7 +47,49 @@ class MLProjectionFit(ProjectionFit):
 
         self.model.profile_data = projection_data
 
+ml_gaussian_parameters = ModelParameters(
+    name="Gaussian Parameters",
+    parameters={
+        "mean": Parameter(bounds=[0.01, 1.0]),
+        "sigma": Parameter(bounds=[0.0001, 5.0]),
+        "amplitude": Parameter(bounds=[0.01, 1.0]),
+        "offset": Parameter(bounds=[0.01, 1.0]),
+    },
+)
 
+class MLGaussianModel(GaussianModel):
+    parameters: ModelParameters = ml_gaussian_parameters
+
+    def find_priors(self, **kwargs) -> dict:
+        """
+        Do initial guesses based on data and make distribution from that guess.
+        """
+        init_values = self.find_init_values()
+        amplitude_mean = init_values["amplitude"]
+        amplitude_var = 0.1
+        amplitude_alpha = (amplitude_mean**2) / amplitude_var
+        amplitude_beta = amplitude_mean / amplitude_var
+        amplitude_prior = gamma(amplitude_alpha, loc=0, scale=1 / amplitude_beta)
+
+        # Creating a normal distribution of points around the inital mean.
+        mean_prior = norm(init_values["mean"], 0.1)
+        # mean_prior = uniform(0.0001, 1.0)
+        #sigma_alpha = 2.5
+        #sigma_beta = 5.0
+        #sigma_prior = gamma(sigma_alpha, loc=0, scale=1 / sigma_beta)
+        sigma_prior = uniform(0.0001, 5.0)
+
+        # Creating a normal distribution of points around initial offset.
+        offset_prior = norm(init_values["offset"], 0.5)
+        priors = {
+            "mean": mean_prior,
+            "sigma": sigma_prior,
+            "amplitude": amplitude_prior,
+            "offset": offset_prior,
+        }
+
+        self.parameters.priors = priors
+        return priors
 
 class ImageProjectionFit(ImageProjectionFit):
     """
@@ -51,7 +98,7 @@ class ImageProjectionFit(ImageProjectionFit):
     profile with prior distributions placed on the model parameters.
     """
     projection_fit: Optional[ProjectionFit] = MLProjectionFit(
-        model = GaussianModel(use_priors=True), relative_filter_size=0.01
+        model = MLGaussianModel(use_priors=True), relative_filter_size=0.01
         ) 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     signal_to_noise_threshold: PositiveFloat = Field(4.0, description="Fit amplitud to noise threshold for the fit")
@@ -71,7 +118,6 @@ class ImageProjectionFit(ImageProjectionFit):
             # determine the noise around the projection fit
             x = np.arange(len(projections[i]))
             noise_std = np.std(self.projection_fit.model.forward(x , params) - projections[i])
-            print(noise_std*3, params["amplitude"])
 
             # if the amplitude of the the fit is smaller than noise then reject
             if params["amplitude"] < noise_std * self.signal_to_noise_threshold:
@@ -113,25 +159,24 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         rms_size = np.array(fresult.rms_size)
         centroid = np.array(fresult.centroid)
 
-        if np.any(np.isnan(rms_size)):
-            return fresult
-        else:
-            n_stds = self.n_stds
-            
-            bbox = np.array(
-                [
-                    -1 * rms_size * n_stds + centroid,
-                    rms_size * n_stds + centroid,
-                ]
-            ).astype(int)
-            bbox = np.clip(bbox, 0, image.shape[0])
-            
-            # crop the image based on the bounding box
-            cropped_image = image[
-                bbox[0][1] : bbox[1][1], bbox[0][0] : bbox[1][0]
-            ]
-            result = super()._fit_image(cropped_image)
+        # get ranges for clipping
+        crop_ranges = []
+        for i in range(2):
+            if np.isnan(rms_size[i]):
+                # if the rms size is nan then we can't crop this direction
+                r = np.array([0, image.shape[i]]).astype(int)
+            else:
+                r = np.array([centroid[i] - rms_size[i] * self.n_stds, centroid[i] + rms_size[i] * self.n_stds]).astype(int)
+                r = np.clip(r, 0, image.shape[i])
 
-            # add centroid offset to the result
-            result.centroid += centroid
-            return result
+            crop_ranges.append(r)
+            
+        # crop the image based on the bounding box
+        cropped_image = image[
+            crop_ranges[1][0] : crop_ranges[1][1], crop_ranges[0][0] : crop_ranges[0][1]
+        ]
+        result = super()._fit_image(cropped_image)
+
+        # add centroid offset to the result
+        result.centroid += centroid
+        return result
