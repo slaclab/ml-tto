@@ -54,7 +54,8 @@ class ImageProjectionFit(ImageProjectionFit):
         model = GaussianModel(use_priors=True), relative_filter_size=0.01
         ) 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
+    signal_to_noise_threshold: PositiveFloat = Field(4.0, description="Fit amplitud to noise threshold for the fit")
+    max_sigma_to_image_size_ratio: PositiveFloat = Field(2.0, description="Maximum sigma to projection size ratio")
 
     def _fit_image(self, image: ndarray) -> ImageProjectionFitResult:
         x_projection = np.array(np.sum(image, axis=0))
@@ -73,7 +74,7 @@ class ImageProjectionFit(ImageProjectionFit):
             print(noise_std*3, params["amplitude"])
 
             # if the amplitude of the the fit is smaller than noise then reject
-            if params["amplitude"] < noise_std*3:
+            if params["amplitude"] < noise_std * self.signal_to_noise_threshold:
                 for name in params.keys():
                     params[name] = np.nan
 
@@ -82,7 +83,7 @@ class ImageProjectionFit(ImageProjectionFit):
                 continue
 
             # if 4*sigma does not fit on the projection then its too big
-            if 4 * params["sigma"] > len(projections[i]):
+            if self.max_sigma_to_image_size_ratio * params["sigma"] > len(projections[i]):
                 for name in params.keys():
                     params[name] = np.nan
 
@@ -129,7 +130,6 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
             cropped_image = image[
                 bbox[0][1] : bbox[1][1], bbox[0][0] : bbox[1][0]
             ]
-            
             result = super()._fit_image(cropped_image)
 
             # add centroid offset to the result
