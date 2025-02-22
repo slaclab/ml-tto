@@ -24,7 +24,7 @@ class H5Saver:
         """
 
         self.string_dtype = "utf-8"
-        self.supported_types = (bool, int, float, np.ndarray, np.integer, np.floating)
+        self.supported_types = (bool, int, float, np.integer, np.floating)
 
     @validate_call
     def save_to_h5(self, data: Dict[str, Any], filepath: str):
@@ -47,13 +47,16 @@ class H5Saver:
         def recursive_save(d, f):
             for key, val in d.items():
                 if key == "attrs":
-                    f.attrs.update(val)
+                    f.attrs.update(val or h5py.Empty("f4"))
                 elif isinstance(val, dict):
                     group = f.create_group(key, track_order=True)
                     recursive_save(val, group)
                 elif isinstance(val, list):
                     if all(isinstance(ele, self.supported_types) for ele in val):
                         f.create_dataset(key, data=val, track_order=True)
+                    elif isinstance(val, np.ndarray):
+                        if val.dtype != np.dtype('O'):
+                            f.create_dataset(key, data=val, track_order=True)
                     elif all(isinstance(ele, dict) for ele in val):
                         for i, ele in enumerate(val):
                             group = f.create_group(f"{key}/{i}", track_order=True)
@@ -70,6 +73,9 @@ class H5Saver:
                                 )
                 elif isinstance(val, self.supported_types):
                     f.create_dataset(key, data=val, track_order=True)
+                elif isinstance(val, np.ndarray):
+                    if val.dtype != np.dtype('O'):
+                        f.create_dataset(key, data=val, track_order=True)
                 elif isinstance(val, str):
                     # specify string dtype to avoid issues with encodings
                     f.create_dataset(key, data=val, dtype=dt, track_order=True)
