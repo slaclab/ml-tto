@@ -129,18 +129,27 @@ def calculate_bounding_box_penalty(
         roi_radius = roi.radius[0]
         center = np.ones(2) * roi_radius
 
+        # calculate the max distance from the center of the ROI to the corner of the bounding box
+        max_distance = np.max(
+            np.array(
+                [np.linalg.norm(center - corner) for corner in bounding_box_coordinates]
+            )
+        )
+
+        return max_distance - roi_radius
+
     elif isinstance(roi, ROI):
-        roi_radius = np.min(np.array(roi.extent) / 2)
-        center = np.array(roi.extent) / 2
+        extent = np.array(roi.extent)
+        center = extent / 2
+
+        # calculate the max bbox extent past the edges of the ROI extent
+
+        return np.max(
+            np.abs(
+                bounding_box_coordinates - center
+            ) - extent / 2
+        )
+
     else:
         raise ValueError(f"ROI type {type(roi)} is not supported for ")
 
-
-    # calculate the max distance from the center of the ROI to the corner of the bounding box
-    max_distance = np.max(
-        np.array(
-            [np.linalg.norm(center - corner) for corner in bounding_box_coordinates]
-        )
-    )
-
-    return max_distance - roi_radius

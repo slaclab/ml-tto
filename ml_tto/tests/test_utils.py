@@ -73,10 +73,41 @@ class TestUtils:
             assert np.allclose(coord, expected_coord)
 
     def test_calculate_bounding_box_penalty(self):
-        rms_size = np.array([2, 4]).reshape(1, 2)
-        centroid = np.array([1, 1]).reshape(1, 2)
-        bbox_coords = calculate_bounding_box_coordinates(rms_size, centroid, n_stds=1)
+        bbox_coords = np.array(
+            [
+                np.array([-1, -3]),
+                np.array([3, 5]),
+                np.array([-1, 5]),
+                np.array([3, -3]),
+            ]
+        )
 
         roi = CircularROI(center=[1, 1], radius=1)
         penalty = calculate_bounding_box_penalty(roi, bbox_coords)
         assert penalty == np.linalg.norm(roi.center - np.array((3.0, 5.0))) - 1.0
+
+        # test with a rectangular ROI
+        roi = ROI(center=[1,1], extent=[1, 1])
+        penalty = calculate_bounding_box_penalty(roi, bbox_coords)
+        assert penalty == 4.0
+
+        bbox_coords = np.array(
+            [
+                np.array([0., 0.]),
+                np.array([1., 1.]),
+                np.array([0., 1.0]),
+                np.array([1.0, 0.]),
+            ]
+        )
+        assert calculate_bounding_box_penalty(roi, bbox_coords) == 0.0
+
+        bbox_coords = np.array(
+            [
+                np.array([0.25, 0.25]),
+                np.array([0.55, 0.55]),
+                np.array([0.25, 0.55]),
+                np.array([0.55, 0.25]),
+            ]
+        )
+        assert calculate_bounding_box_penalty(roi, bbox_coords) == -0.25
+
