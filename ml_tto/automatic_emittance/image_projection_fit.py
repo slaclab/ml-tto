@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 from numpy import ndarray
-from pydantic import ConfigDict, PositiveFloat, Field, PositiveInt, confloat
+from pydantic import ConfigDict, PositiveFloat, Field, confloat
 import scipy
 from scipy.stats import norm, gamma, uniform
 
@@ -232,7 +232,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         crop_ranges = np.array(crop_ranges)
         crop_widths = crop_ranges[:, 1] - crop_ranges[:, 0] + 1
-        
+
         # crop the image based on the bounding box
         cropped_image = image[
             crop_ranges[1][0] : crop_ranges[1][1], crop_ranges[0][0] : crop_ranges[0][1]
