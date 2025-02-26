@@ -95,8 +95,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         rms_y[np.isnan(rms_y)] = 10.0
 
         results = {
-            # "bb_penalty": bb_penalty,
-            # "log10_total_intensity": log10_total_intensity,
             "scaled_x_rms_px": rms_x,
             "scaled_y_rms_px": rms_y,
         }

@@ -1,3 +1,4 @@
+from copy import copy, deepcopy
 from typing import List, Optional
 import warnings
 
@@ -9,8 +10,10 @@ from scipy.stats import norm, gamma, uniform
 
 from lcls_tools.common.data.fit.methods import GaussianModel
 from lcls_tools.common.data.fit.projection import ProjectionFit
-from lcls_tools.common.image.fit import ImageProjectionFit, ImageProjectionFitResult
+from lcls_tools.common.image.fit import ImageProjectionFit, ImageFitResult
+from lcls_tools.common.data.fit.method_base import MethodBase
 from lcls_tools.common.measurements.utils import NDArrayAnnotatedType
+
 
 from lcls_tools.common.data.fit.method_base import (
     ModelParameters,
@@ -20,15 +23,14 @@ from lcls_tools.common.data.fit.method_base import (
 from ml_tto.automatic_emittance.plotting import plot_image_projection_fit
 
 
-class MLImageProjectionFitResult(ImageProjectionFitResult):
-    mean_square_errors: NDArrayAnnotatedType = Field(
-        description="Mean squared error of each fit compared to the data"
-    )
+class ImageProjectionFitResult(ImageFitResult):
+    projection_fit_method: MethodBase
+    projection_fit_parameters: List[dict[str, float]]
     noise_std: NDArrayAnnotatedType = Field(
         description="Standard deviation of the noise in the data"
     )
-    non_validated_parameters: List[dict] = Field(
-        description="Parameters that were not validated in the fit"
+    signal_to_noise_ratio: NDArrayAnnotatedType = Field(
+        description="Ratio of fit amplitude to noise std in the data"
     )
 
 
@@ -70,7 +72,7 @@ ml_gaussian_parameters = ModelParameters(
     name="Gaussian Parameters",
     parameters={
         "mean": Parameter(bounds=[0.01, 1.0]),
-        "sigma": Parameter(bounds=[0.0001, 5.0]),
+        "sigma": Parameter(bounds=[0.00001, 5.0]),
         "amplitude": Parameter(bounds=[0.01, 1.0]),
         "offset": Parameter(bounds=[0.01, 1.0]),
     },
@@ -97,7 +99,7 @@ class MLGaussianModel(GaussianModel):
         # sigma_alpha = 2.5
         # sigma_beta = 5.0
         # sigma_prior = gamma(sigma_alpha, loc=0, scale=1 / sigma_beta)
-        sigma_prior = uniform(0.0001, 5.0)
+        sigma_prior = uniform(0.00001, 5.0)
 
         # Creating a normal distribution of points around initial offset.
         offset_prior = norm(init_values["offset"], 0.5)
@@ -124,76 +126,63 @@ class ImageProjectionFit(ImageProjectionFit):
     )
     model_config = ConfigDict(arbitrary_types_allowed=True)
     signal_to_noise_threshold: PositiveFloat = Field(
-        4.0, description="Fit amplitud to noise threshold for the fit"
+        4.0, description="Fit amplitude to noise threshold for the fit"
     )
     max_sigma_to_image_size_ratio: PositiveFloat = Field(
         2.0, description="Maximum sigma to projection size ratio"
     )
 
     def _fit_image(self, image: ndarray) -> ImageProjectionFitResult:
-        x_projection = np.array(np.sum(image, axis=0))
-        y_projection = np.array(np.sum(image, axis=1))
-
-        x_parameters = self.projection_fit.fit_projection(x_projection)
-        y_parameters = self.projection_fit.fit_projection(y_projection)
-
-        # checks to validate the fit results
-        direction = ["x", "y"]
-        projections = [x_projection, y_projection]
-        non_validated_parameters = [x_parameters, y_parameters]
+        fit_parameters = []
         noise_stds = []
-        mean_square_errors = []
+        signal_to_noise_ratios = []
 
-        for i, params in enumerate([x_parameters, y_parameters]):
+        direction = ["x", "y"]
+        for i in range(2):
+            projection = np.array(np.sum(image, axis=i))
+            parameters = self.projection_fit.fit_projection(projection)
+
             # determine the noise around the projection fit
-            x = np.arange(len(projections[i]))
+            x = np.arange(len(projection))
             noise_std = np.std(
-                self.projection_fit.model.forward(x, params) - projections[i]
+                self.projection_fit.model.forward(x, parameters) - projection
             )
             noise_stds.append(noise_std)
-
-            # calculate mse
-            mean_square_errors.append(
-                np.mean(
-                    (self.projection_fit.model.forward(x, params) - projections[i]) ** 2
-                )
-            )
+            signal_to_noise_ratios.append(parameters["amplitude"] / noise_std)
 
             # if the amplitude of the the fit is smaller than noise then reject
-            if params["amplitude"] < noise_std * self.signal_to_noise_threshold:
-                for name in params.keys():
-                    params[name] = np.nan
+            if signal_to_noise_ratios[-1] < self.signal_to_noise_threshold:
+                for name in parameters.keys():
+                    parameters[name] = np.nan
 
                 warnings.warn(
                     f"Projection in {direction[i]} had a low amplitude relative to noise"
                 )
 
-                continue
+            fit_parameters.append(parameters)
 
             # if 4*sigma does not fit on the projection then its too big
-            if self.max_sigma_to_image_size_ratio * params["sigma"] > len(
-                projections[i]
-            ):
-                for name in params.keys():
-                    params[name] = np.nan
+            # if self.max_sigma_to_image_size_ratio * params["sigma"] > len(
+            #    projections[i]
+            # ):
+            #    for name in params.keys():
+            #        params[name] = np.nan
 
-                warnings.warn(
-                    f"Projection in {direction[i]} was too big relative to projection span"
-                )
+            #    warnings.warn(
+            #        f"Projection in {direction[i]} was too big relative to projection span"
+            #    )
 
-                continue
+            #    continue
 
-        result = MLImageProjectionFitResult(
-            centroid=[x_parameters["mean"], y_parameters["mean"]],
-            rms_size=[x_parameters["sigma"], y_parameters["sigma"]],
+        result = ImageProjectionFitResult(
+            centroid=[ele["mean"] for ele in fit_parameters],
+            rms_size=[ele["sigma"] for ele in fit_parameters],
             total_intensity=image.sum(),
-            x_projection_fit_parameters=x_parameters,
-            y_projection_fit_parameters=y_parameters,
+            projection_fit_parameters=fit_parameters,
             image=image,
             projection_fit_method=self.projection_fit.model,
-            non_validated_parameters=non_validated_parameters,
             noise_std=noise_stds,
-            mean_square_errors=mean_square_errors,
+            signal_to_noise_ratio=signal_to_noise_ratios,
         )
 
         return result
@@ -212,6 +201,10 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         rms_size = np.array(fresult.rms_size)
         centroid = np.array(fresult.centroid)
+
+        # if all rms sizes are nan then we can't crop the image
+        if np.all(np.isnan(rms_size)):
+            return fresult
 
         # get ranges for clipping
         crop_ranges = []
@@ -241,38 +234,41 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         if self.show_intermediate_plots:
             plot_image_projection_fit(result)
 
-        # add centroid offset to the results + replace image to full image
-        result.centroid += centroid - crop_widths / 2
-        result.x_projection_fit_parameters["mean"] = result.centroid[0]
-        result.y_projection_fit_parameters["mean"] = result.centroid[1]
-        result.image = image
-        result.non_validated_parameters = [
-            result.x_projection_fit_parameters,
-            result.y_projection_fit_parameters,
-        ]
+        # update the image
+        # result.image = image
 
-        # update mean square errors and noise std
-        noise_stds = []
-        mean_square_errors = []
-        x_parameters = result.x_projection_fit_parameters
-        y_parameters = result.y_projection_fit_parameters
-        projections = [np.sum(image, axis=0), np.sum(image, axis=0)]
+        # if the fit along an axis is successful then update the fit parameters
+        for i in range(2):
+            if not np.isnan(result.rms_size[i]):
+                # we cropped in this direction so we need to update the fit parameters
+                # note that we cropped when the centroid/rms is not nan
+                if not np.isnan(centroid[i]):
+                    result.centroid[i] += centroid[i] - crop_widths[i] / 2
+                    # result.projection_fit_parameters[i]["mean"] = result.centroid[i]
 
-        for i, params in enumerate([x_parameters, y_parameters]):
-            # determine the noise around the projection fit
-            x = np.arange(len(projections[i]))
-            noise_std = np.std(
-                self.projection_fit.model.forward(x, params) - projections[i]
-            )
-            noise_stds.append(noise_std)
-
-            # calculate mse
-            mean_square_errors.append(
-                np.mean(
-                    (self.projection_fit.model.forward(x, params) - projections[i]) ** 2
+                # recalculate the noise std and signal to noise ratio
+                projection = np.sum(result.image, axis=i)
+                x = np.arange(len(projection))
+                noise_std = np.std(
+                    self.projection_fit.model.forward(
+                        x, result.projection_fit_parameters[i]
+                    )
+                    - projection
                 )
-            )
-        result.mean_square_errors = mean_square_errors
-        result.noise_std = noise_stds
+                result.noise_std[i] = noise_std
+                result.signal_to_noise_ratio[i] = (
+                    result.projection_fit_parameters[i]["amplitude"] / noise_std
+                )
+
+            else:
+                # if the fit is not successful then revert the parameters back to the original
+                # parameters
+                result.centroid[i] = fresult.centroid[i]
+                result.rms_size[i] = fresult.rms_size[i]
+                result.projection_fit_parameters[i] = fresult.projection_fit_parameters[
+                    i
+                ]
+                result.noise_std[i] = fresult.noise_std[i]
+                result.signal_to_noise_ratio[i] = fresult.signal_to_noise_ratio[i]
 
         return result
