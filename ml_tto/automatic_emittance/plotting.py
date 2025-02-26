@@ -39,10 +39,15 @@ def plot_image_projection_fit(result: ImageProjectionFitResult, n_stds: float = 
     for i in range(2):
         fit_params = copy(result.projection_fit_parameters[i])
         fit_params.update({"stnr": result.signal_to_noise_ratio[i]})
+
+        text_info = "\n".join([f"{name}: {val:.2f}" for name, val in fit_params.items()])
+        text_info += (
+            "\n" + "extent " + ",".join([f"{ele:.2f}" for ele in result.beam_extent[i]])
+        )
         ax[i + 1].text(
             0.01,
             0.99,
-            "\n".join([f"{name}: {val:.2f}" for name, val in fit_params.items()]),
+            text_info,
             transform=ax[i + 1].transAxes,
             ha="left",
             va="top",
@@ -54,10 +59,5 @@ def plot_image_projection_fit(result: ImageProjectionFitResult, n_stds: float = 
         ax[i + 1].plot(
             result.projection_fit_method.forward(x, fit_params), label="model fit"
         )
-        # ax[i + 1].plot(
-        #    result.projection_fit_method.forward(x, result.non_validated_parameters[i]),
-        #    "--",
-        #    label="non-validated fit",
-        # )
 
     return fig, ax

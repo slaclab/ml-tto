@@ -32,6 +32,9 @@ class ImageProjectionFitResult(ImageFitResult):
     signal_to_noise_ratio: NDArrayAnnotatedType = Field(
         description="Ratio of fit amplitude to noise std in the data"
     )
+    beam_extent: NDArrayAnnotatedType = Field(
+        description="Extent of the beam in the data, defined as mean +/- 2*sigma"
+    )
 
 
 class MLProjectionFit(ProjectionFit):
@@ -128,14 +131,19 @@ class ImageProjectionFit(ImageProjectionFit):
     signal_to_noise_threshold: PositiveFloat = Field(
         4.0, description="Fit amplitude to noise threshold for the fit"
     )
-    max_sigma_to_image_size_ratio: PositiveFloat = Field(
-        2.0, description="Maximum sigma to projection size ratio"
+    beam_extent_n_stds: PositiveFloat = Field(
+        2.0,
+        description="Number of standard deviations on either side to use for the beam extent",
     )
+    # max_sigma_to_image_size_ratio: PositiveFloat = Field(
+    #    2.0, description="Maximum sigma to projection size ratio"
+    # )
 
     def _fit_image(self, image: ndarray) -> ImageProjectionFitResult:
         fit_parameters = []
         noise_stds = []
         signal_to_noise_ratios = []
+        beam_extent = []
 
         direction = ["x", "y"]
         for i in range(2):
@@ -161,18 +169,23 @@ class ImageProjectionFit(ImageProjectionFit):
 
             fit_parameters.append(parameters)
 
-            # if 4*sigma does not fit on the projection then its too big
-            # if self.max_sigma_to_image_size_ratio * params["sigma"] > len(
-            #    projections[i]
-            # ):
-            #    for name in params.keys():
-            #        params[name] = np.nan
+            beam_extent.append(
+                [
+                    parameters["mean"] - self.beam_extent_n_stds * parameters["sigma"],
+                    parameters["mean"] + self.beam_extent_n_stds * parameters["sigma"],
+                ]
+            )
 
-            #    warnings.warn(
-            #        f"Projection in {direction[i]} was too big relative to projection span"
-            #    )
+            # if the beam extent is outside the image then its off the screen etc. and fits cannot be trusted
+            if beam_extent[-1][0] < 0 or beam_extent[-1][1] > len(projection):
+                for name in parameters.keys():
+                    parameters[name] = np.nan
 
-            #    continue
+                warnings.warn(
+                    f"Projection in {direction[i]} was off the screen, fit cannot be trusted"
+                )
+
+                continue
 
         result = ImageProjectionFitResult(
             centroid=[ele["mean"] for ele in fit_parameters],
@@ -183,6 +196,7 @@ class ImageProjectionFit(ImageProjectionFit):
             projection_fit_method=self.projection_fit.model,
             noise_std=noise_stds,
             signal_to_noise_ratio=signal_to_noise_ratios,
+            beam_extent=beam_extent,
         )
 
         return result
@@ -192,11 +206,26 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
     n_stds: PositiveFloat = Field(
         4.0, description="Number of standard deviations to use for the bounding box"
     )
-    show_intermediate_plots: bool = Field(
-        False, description="Show intermediate plots of the cropped image and fit"
+    projection_fit: Optional[ProjectionFit] = MLProjectionFit(
+        model=MLGaussianModel(use_priors=True), relative_filter_size=0.01
     )
 
     def _fit_image(self, image: np.ndarray) -> ImageProjectionFitResult:
+        """
+        Fit the image recusrively by cropping the image to the bounding box of the first fit
+        and then refitting the image. This is done to avoid fitting the background noise
+        and to get a more accurate fit of the beam size and location.
+
+        The fit is done in several steps:
+        1. Fit the image to get the initial beam size and location
+        2. If the fit is successful in either direction
+            a. crop the image to the bounding box of the fit
+            b. refit the image to get a more accurate beam size and location
+            c. update the fit parameters to reflect the new image size
+            d. recalculate the noise std and signal to noise ratio
+        3. If the fit is not successful in either direction then return the original image and fit parameters
+
+        """
         fresult = super()._fit_image(image)
 
         rms_size = np.array(fresult.rms_size)
@@ -230,45 +259,17 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         cropped_image = image[
             crop_ranges[1][0] : crop_ranges[1][1], crop_ranges[0][0] : crop_ranges[0][1]
         ]
-        result = super()._fit_image(cropped_image)
-        if self.show_intermediate_plots:
-            plot_image_projection_fit(result)
 
-        # update the image
-        # result.image = image
+        # do final fit
+        self.beam_extent_n_stds = 2.0
+        result = super()._fit_image(cropped_image)
 
         # if the fit along an axis is successful then update the fit parameters
         for i in range(2):
-            if not np.isnan(result.rms_size[i]):
+            if np.isfinite(result.rms_size[i]) and np.isfinite(centroid[i]):
                 # we cropped in this direction so we need to update the fit parameters
-                # note that we cropped when the centroid/rms is not nan
-                if not np.isnan(centroid[i]):
-                    result.centroid[i] += centroid[i] - crop_widths[i] / 2
-                    # result.projection_fit_parameters[i]["mean"] = result.centroid[i]
-
-                # recalculate the noise std and signal to noise ratio
-                projection = np.sum(result.image, axis=i)
-                x = np.arange(len(projection))
-                noise_std = np.std(
-                    self.projection_fit.model.forward(
-                        x, result.projection_fit_parameters[i]
-                    )
-                    - projection
-                )
-                result.noise_std[i] = noise_std
-                result.signal_to_noise_ratio[i] = (
-                    result.projection_fit_parameters[i]["amplitude"] / noise_std
-                )
-
-            else:
-                # if the fit is not successful then revert the parameters back to the original
-                # parameters
-                result.centroid[i] = fresult.centroid[i]
-                result.rms_size[i] = fresult.rms_size[i]
-                result.projection_fit_parameters[i] = fresult.projection_fit_parameters[
-                    i
-                ]
-                result.noise_std[i] = fresult.noise_std[i]
-                result.signal_to_noise_ratio[i] = fresult.signal_to_noise_ratio[i]
+                result.centroid[i] += centroid[i] - crop_widths[i] / 2
+                result.beam_extent[i] += centroid[i] - crop_widths[i] / 2
+           
 
         return result
