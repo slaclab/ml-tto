@@ -5,7 +5,7 @@ from matplotlib.patches import Rectangle
 from lcls_tools.common.image.fit import ImageProjectionFitResult
 
 
-def plot_image_projection_fit(result: ImageProjectionFitResult, n_stds: float = 2.0):
+def plot_image_projection_fit(result: ImageProjectionFitResult, n_stds: float = 4.0):
     """
     plot image and projection data for validation
     """
