@@ -79,6 +79,8 @@ class H5Saver:
                 elif isinstance(val, np.ndarray):
                     if val.dtype != np.dtype("O"):
                         f.create_dataset(key, data=val, track_order=True)
+                    else:
+                        raise ValueError("Cannot save numpy object arrays")
                 elif isinstance(val, str):
                     # specify string dtype to avoid issues with encodings
                     f.create_dataset(key, data=val, dtype=dt, track_order=True)
