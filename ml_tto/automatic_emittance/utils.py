@@ -6,6 +6,7 @@ from lcls_tools.common.measurements.screen_profile import (
 )
 from lcls_tools.common.data.model_general_calcs import bdes_to_kmod
 from lcls_tools.common.data.emittance import compute_emit_bmag
+from lcls_tools.common.measurements.emittance_measurement import EmittanceMeasurementResult
 
 from ml_tto.saver import H5Saver
 
@@ -221,7 +222,7 @@ def emittance_from_h5(
     results = compute_emit_bmag_machine_units(**inputs)
     results["metadata"] = result_dict["metadata"]
 
-    return results
+    return EmittanceMeasurementResult(**results)
 
 
 def compute_emit_bmag_machine_units(
@@ -299,7 +300,8 @@ def compute_emit_bmag_machine_units(
         for name, value in result.items():
             if name == "bmag" and value is None:
                 continue
-            else:
+            else: # beam matrix and emittance get appended
+                print(name, value)
                 results[name].append(value)
 
         results["rms_beamsizes"].append(beamsizes[f"{i}"][~np.isnan(beamsizes[f"{i}"])])
