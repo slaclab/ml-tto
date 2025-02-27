@@ -10,7 +10,6 @@ from lcls_tools.common.data.emittance import compute_emit_bmag
 from ml_tto.saver import H5Saver
 
 
-
 def validate_beamsize_measurement_result(
     screen_measurement_result: ScreenBeamProfileMeasurementResult,
     roi: ROI,
@@ -150,17 +149,15 @@ def calculate_bounding_box_penalty(
 
         # calculate the max bbox extent past the edges of the ROI extent
 
-        return np.max(
-            np.abs(
-                bounding_box_coordinates - center
-            ) - extent / 2
-        )
+        return np.max(np.abs(bounding_box_coordinates - center) - extent / 2)
 
     else:
         raise ValueError(f"ROI type {type(roi)} is not supported for ")
 
 
-def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None): # TODO: check if any of these could be none or key not found
+def emittance_from_h5(
+    h5_filename: str, thin_lens=False, maxiter=None
+):  # TODO: check if any of these could be none or key not found
     """
     Parse HDF5 values needed for emittance calculation and calculate the emittance.
 
@@ -191,18 +188,29 @@ def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None): # TODO: 
         raise OSError(f"File {h5_filename} is not found.")
 
     inputs = {
-        "quad_vals": result_dict["quadrupole_pv_values"], # dict, in kG
-        "beamsizes": result_dict["rms_beamsizes"], # dict, in m
-        "q_len": result_dict["metadata"]["magnet"]["metadata"]["l_eff"], # in m
-        "rmat": result_dict["metadata"]["rmat"], # 2D array
-        "energy": result_dict["metadata"]["energy"], # in eV
+        "quad_vals": result_dict["quadrupole_pv_values"],  # dict, in kG
+        "beamsizes": result_dict["rms_beamsizes"],  # dict, in m
+        "q_len": result_dict["metadata"]["magnet"]["metadata"]["l_eff"],  # in m
+        "rmat": result_dict["metadata"]["rmat"],  # 2D array
+        "energy": result_dict["metadata"]["energy"],  # in eV
     }
 
-    if "design_twiss" in result_dict["metadata"] and result_dict["metadata"]["design_twiss"] is not None:
-        twiss_design = np.array([
-            [result_dict["metadata"]["design_twiss"]["beta_x"], result_dict["metadata"]["design_twiss"]["alpha_x"]],
-            [result_dict["metadata"]["design_twiss"]["beta_y"], result_dict["metadata"]["design_twiss"]["alpha_y"]]
-        ])
+    if (
+        "design_twiss" in result_dict["metadata"]
+        and result_dict["metadata"]["design_twiss"] is not None
+    ):
+        twiss_design = np.array(
+            [
+                [
+                    result_dict["metadata"]["design_twiss"]["beta_x"],
+                    result_dict["metadata"]["design_twiss"]["alpha_x"],
+                ],
+                [
+                    result_dict["metadata"]["design_twiss"]["beta_y"],
+                    result_dict["metadata"]["design_twiss"]["alpha_y"],
+                ],
+            ]
+        )
     else:
         twiss_design = None
     inputs["twiss_design"] = twiss_design
@@ -210,12 +218,22 @@ def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None): # TODO: 
     inputs["maxiter"] = maxiter
 
     # Call wrapper that takes quads in machine units and beamsize in meters
-    results  = compute_emit_bmag_machine_units(**inputs)
+    results = compute_emit_bmag_machine_units(**inputs)
     results["metadata"] = result_dict["metadata"]
 
     return results
 
-def compute_emit_bmag_machine_units(quad_vals: dict, beamsizes: dict, q_len: float, rmat: np.ndarray, energy: float, twiss_design: np.ndarray, thin_lens: bool = False, maxiter: int = None):
+
+def compute_emit_bmag_machine_units(
+    quad_vals: dict,
+    beamsizes: dict,
+    q_len: float,
+    rmat: np.ndarray,
+    energy: float,
+    twiss_design: np.ndarray,
+    thin_lens: bool = False,
+    maxiter: int = None,
+):
     """
     Wrapper for compute_emit_bmag that takes quads in machine units and beamsize in meters.
 
@@ -242,8 +260,10 @@ def compute_emit_bmag_machine_units(quad_vals: dict, beamsizes: dict, q_len: flo
     -------
     dict
         The results of the emittance calculation.
-    """    # Preprocessing data
-    kmod_list, beamsizes_squared_list = preprocess_inputs(quad_vals, beamsizes, energy, q_len)
+    """  # Preprocessing data
+    kmod_list, beamsizes_squared_list = preprocess_inputs(
+        quad_vals, beamsizes, energy, q_len
+    )
 
     # Prepare outputs
     results = {
@@ -285,6 +305,7 @@ def compute_emit_bmag_machine_units(quad_vals: dict, beamsizes: dict, q_len: flo
         results["rms_beamsizes"].append(beamsizes[f"{i}"][~np.isnan(beamsizes[f"{i}"])])
 
     return results
+
 
 def preprocess_inputs(quad_vals: dict, beamsizes: dict, energy: float, q_len: float):
     """
@@ -328,4 +349,3 @@ def preprocess_inputs(quad_vals: dict, beamsizes: dict, energy: float, q_len: fl
         kmod_list.append(kmod)
 
     return kmod_list, beamsizes_squared_list
-
