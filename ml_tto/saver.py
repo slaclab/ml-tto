@@ -31,7 +31,7 @@ class H5Saver:
     @validate_call
     def save_to_h5(self, data: Dict[str, Any], filepath: str):
         """
-        Save a dictionary to an HDF5 file.
+        Save a dictionary to an HDF5 file. 5s
 
         Parameters
         ----------
@@ -60,8 +60,12 @@ class H5Saver:
                         for i, ele in enumerate(val):
                             f.create_dataset(f"{key}/{i}", data=ele, track_order=True)
                             if ele.dtype == np.dtype("O"):
-                                # TODO: do we need to handle these?
-                                raise ValueError("Cannot save numpy object arrays")
+                                f.create_dataset(
+                                    f"{key}/{i}",
+                                    data=str(ele),
+                                    dtype=dt,
+                                    track_order=True,
+                                )
                     elif all(isinstance(ele, dict) for ele in val):
                         for i, ele in enumerate(val):
                             group = f.create_group(f"{key}/{i}", track_order=True)
@@ -74,7 +78,10 @@ class H5Saver:
                                 )
                             else:
                                 f.create_dataset(
-                                    f"{key}/{i}", data=str(ele), track_order=True
+                                    f"{key}/{i}",
+                                    data=str(ele),
+                                    dtype=dt,
+                                    track_order=True,
                                 )
                 elif isinstance(val, self.supported_types):
                     f.create_dataset(key, data=val, track_order=True)
@@ -82,12 +89,12 @@ class H5Saver:
                     if val.dtype != np.dtype("O"):
                         f.create_dataset(key, data=val, track_order=True)
                     else:
-                        raise ValueError("Cannot save numpy object arrays")
+                        f.create_dataset(key, data=str(val), dtype=dt, track_order=True)
                 elif isinstance(val, str):
                     # specify string dtype to avoid issues with encodings
                     f.create_dataset(key, data=val, dtype=dt, track_order=True)
                 else:
-                    f.create_dataset(key, data=str(val), track_order=True)
+                    f.create_dataset(key, data=str(val), dtype=dt, track_order=True)
 
         with h5py.File(filepath, "w") as file:
             recursive_save(data, file)
