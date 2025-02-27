@@ -54,9 +54,12 @@ class H5Saver:
                 elif isinstance(val, list):
                     if all(isinstance(ele, self.supported_types) for ele in val):
                         f.create_dataset(key, data=val, track_order=True)
-                    elif isinstance(val, np.ndarray):
-                        if val.dtype != np.dtype('O'):
-                            f.create_dataset(key, data=val, track_order=True)
+                    elif all(isinstance(ele, np.ndarray) for ele in val):
+                        for i, ele in enumerate(val):
+                            f.create_dataset(f"{key}/{i}", data=ele, track_order=True)
+                            if ele.dtype == np.dtype('O'):
+                                # TODO: do we need to handle these?
+                                raise ValueError("Cannot save numpy object arrays")
                     elif all(isinstance(ele, dict) for ele in val):
                         for i, ele in enumerate(val):
                             group = f.create_group(f"{key}/{i}", track_order=True)
