@@ -42,14 +42,16 @@ class TestImageProjectionFit:
     def test_single_pixel_image_fits(self, image_projection_fit):
     
         # test case where the beam size is one pixel
-        test_image = np.zeros((100, 100))
-        test_image[49:51, 49:51] = 1.0
+        test_image = np.zeros((100, 100)) + 0.1
+        test_image[25:27, 25:27] = 1.0
         result = image_projection_fit.fit_image(test_image)
 
-        assert np.allclose(result.centroid, 49.5, rtol=1e-2)
+        assert np.allclose(result.centroid, 25.5, rtol=1e-2)
         assert np.allclose(result.rms_size, 1.0, atol=0.5)
 
         plot_image_projection_fit(result)
+
+
 
     @pytest.mark.parametrize("image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()])
     def test_image_projection_fit_with_bad_data(self, image_projection_fit):

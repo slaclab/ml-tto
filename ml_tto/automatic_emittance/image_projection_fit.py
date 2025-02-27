@@ -85,6 +85,27 @@ ml_gaussian_parameters = ModelParameters(
 class MLGaussianModel(GaussianModel):
     parameters: ModelParameters = ml_gaussian_parameters
 
+    def find_init_values(self) -> dict:
+        """Fit data without optimization, return values."""
+
+        data = self._profile_data
+        x = np.linspace(0, 1, len(data))
+        offset = data.min() + 0.01
+        amplitude = data.max() - offset
+
+        truncated_data = np.clip(data - 2.0 * offset, 0.01 * offset, None)
+        weighted_mean = np.average(x, weights=truncated_data)
+        weighted_sigma = np.sqrt(np.cov(x, aweights=truncated_data))
+
+        init_values = {
+            "mean": weighted_mean,
+            "sigma": weighted_sigma,
+            "amplitude": amplitude,
+            "offset": offset,
+        }
+        self.parameters.initial_values = init_values
+        return init_values
+
     def find_priors(self, **kwargs) -> dict:
         """
         Do initial guesses based on data and make distribution from that guess.
@@ -169,6 +190,7 @@ class ImageProjectionFit(ImageProjectionFit):
 
             fit_parameters.append(parameters)
 
+            # calculate the extent of the beam in the projection - scaled to the image size
             beam_extent.append(
                 [
                     parameters["mean"] - self.beam_extent_n_stds * parameters["sigma"],
@@ -230,6 +252,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         rms_size = np.array(fresult.rms_size)
         centroid = np.array(fresult.centroid)
+        print(rms_size, centroid)
 
         # if all rms sizes are nan then we can't crop the image
         if np.all(np.isnan(rms_size)):
@@ -238,14 +261,16 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         # get ranges for clipping
         crop_ranges = []
         for i in range(2):
+            # if the rms size is nan then we can't crop this direction
             if np.isnan(rms_size[i]):
-                # if the rms size is nan then we can't crop this direction
                 r = np.array([0, image.shape[i]]).astype(int)
             else:
+                # set a minimum size for the crop to avoid cropping too small
+                half_width = np.max((10.0, rms_size[i] * self.n_stds))
                 r = np.array(
                     [
-                        centroid[i] - rms_size[i] * self.n_stds,
-                        centroid[i] + rms_size[i] * self.n_stds,
+                        centroid[i] - half_width,
+                        centroid[i] + half_width,
                     ]
                 ).astype(int)
                 r = np.clip(r, 0, image.shape[i])
@@ -260,6 +285,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
             crop_ranges[1][0] : crop_ranges[1][1], crop_ranges[0][0] : crop_ranges[0][1]
         ]
 
+        print(centroid, rms_size)
         # do final fit
         self.beam_extent_n_stds = 2.0
         result = super()._fit_image(cropped_image)
@@ -270,6 +296,5 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
                 # we cropped in this direction so we need to update the fit parameters
                 result.centroid[i] += centroid[i] - crop_widths[i] / 2
                 result.beam_extent[i] += centroid[i] - crop_widths[i] / 2
-           
 
         return result
