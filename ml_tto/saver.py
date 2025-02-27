@@ -8,21 +8,23 @@ class H5Saver:
     """
     Class to save and load dictionaries to and from HDF5 files.
 
-    Methods:
-    ------------------------
-    save_to_h5: Saves a dictionary to an HDF5 file.
-    load_from_h5: Loads a dictionary from an HDF5 file.
+    Methods
+    -------
+    save_to_h5(data, filepath)
+        Saves a dictionary to an HDF5 file.
+    load_from_h5(filepath)
+        Loads a dictionary from an HDF5 file.
     """
 
     def __init__(self):
-        """Initialize the H5Saver class.
+        """
+        Initialize the H5Saver class.
 
-        Arguments:
-        ------------------------
-        string_dtype: str, optional
+        Parameters
+        ----------
+        string_dtype : str, optional
             The encoding to use when saving string data. Default is 'utf-8'.
         """
-
         self.string_dtype = "utf-8"
         self.supported_types = (bool, int, float, np.integer, np.floating)
 
@@ -30,18 +32,18 @@ class H5Saver:
     def save_to_h5(self, data: Dict[str, Any], filepath: str):
         """
         Save a dictionary to an HDF5 file.
-        Arguments:
-        ------------------------
-        data: Dict[str, Any]
-            The dictionary to save.
-        filepath: str
-            The path to save
 
-        Returns:
-        ------------------------
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            The dictionary to save.
+        filepath : str
+            The path to save the HDF5 file.
+
+        Returns
+        -------
         None
         """
-
         dt = h5py.string_dtype(encoding=self.string_dtype)
 
         def recursive_save(d, f):
@@ -91,15 +93,16 @@ class H5Saver:
             recursive_save(data, file)
 
     def load_from_h5(self, filepath):
-        """Convenience method to load a dictionary from an HDF5 file.
+        """
+        Load a dictionary from an HDF5 file.
 
-        Arguments:
-        ------------------------
-        filepath: str
+        Parameters
+        ----------
+        filepath : str
             The path to the file to load.
 
-        Returns:
-        ------------------------
+        Returns
+        -------
         dict
             The dictionary loaded from the file.
         """
