@@ -44,6 +44,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 "Beamsize measurement must be a ScreenBeamProfileMeasurement for MLQuadScanEmittance"
             )
 
+        return v
         # check to make sure the the beamsize measurement screen has a region of interest
         # if not isinstance(v.image_processor.roi, ROI):
         #    raise ValueError(
