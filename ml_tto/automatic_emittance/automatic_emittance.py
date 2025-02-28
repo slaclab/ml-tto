@@ -100,6 +100,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         results = {
             "scaled_x_rms_px": rms_x,
             "scaled_y_rms_px": rms_y,
+            "min_signal_to_noise_ratio": np.min(validated_result.signal_to_noise_ratio),
         }
         if self.verbose:
             print(f"Results: {results}")
@@ -153,6 +154,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
             for _ in range(self.n_iterations):
                 min_size = np.nanmin(X.data["scaled_x_rms_px"].to_numpy(dtype="float"))
                 x_vocs.constraints = {
+                    "min_signal_to_noise_ratio": ["GREATER_THAN", 4],
                     "scaled_x_rms_px": ["LESS_THAN", self.cutoff_max * min_size]
                 }
 
