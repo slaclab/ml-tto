@@ -15,13 +15,10 @@ from lcls_tools.common.data.model_general_calcs import bdes_to_kmod, get_optics
 from typing import Optional, Tuple
 
 from pydantic import PositiveInt, field_validator
-
-from lcls_tools.common.measurements.screen_profile import (
-    ScreenBeamProfileMeasurement,
-)
 import time
 
 from ml_tto.automatic_emittance.utils import compute_emit_bmag_machine_units
+from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -94,13 +91,15 @@ class MLQuadScanEmittance(QuadScanEmittance):
         rms_y = validated_result.rms_sizes[:, 1] / 100
 
         # replace any nan values with 10.0
-        rms_x[np.isnan(rms_x)] = 10.0
-        rms_y[np.isnan(rms_y)] = 10.0
+        #rms_x[np.isnan(rms_x)] = 10.0
+        #rms_y[np.isnan(rms_y)] = 10.0
 
         results = {
             "scaled_x_rms_px": rms_x,
             "scaled_y_rms_px": rms_y,
-            "min_signal_to_noise_ratio": np.min(validated_result.signal_to_noise_ratio),
+            "min_signal_to_noise_ratio": np.min(
+                validated_result.signal_to_noise_ratios
+            ),
         }
         if self.verbose:
             print(f"Results: {results}")
@@ -155,7 +154,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 min_size = np.nanmin(X.data["scaled_x_rms_px"].to_numpy(dtype="float"))
                 x_vocs.constraints = {
                     "min_signal_to_noise_ratio": ["GREATER_THAN", 4],
-                    "scaled_x_rms_px": ["LESS_THAN", self.cutoff_max * min_size]
+                    "scaled_x_rms_px": ["LESS_THAN", self.cutoff_max * min_size],
                 }
 
                 X.vocs = x_vocs
@@ -249,7 +248,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
             "q_len": magnet_length,
             "rmat": self.rmat,
             "energy": self.energy,
-            "twiss_design": twiss_betas_alphas if twiss_betas_alphas is not None else None,
+            "twiss_design": twiss_betas_alphas
+            if twiss_betas_alphas is not None
+            else None,
         }
 
         # Call wrapper that takes quads in machine units and beamsize in meters

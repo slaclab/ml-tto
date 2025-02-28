@@ -10,16 +10,14 @@ from lcls_tools.common.devices.screen import Screen
 from lcls_tools.common.frontend.plotting.emittance import plot_quad_scan_result
 from lcls_tools.common.image.roi import CircularROI
 from lcls_tools.common.image.processing import ImageProcessor
-from lcls_tools.common.measurements.screen_profile import (
-    ScreenBeamProfileMeasurement,
-    ScreenBeamProfileMeasurementResult,
-)
 import matplotlib.pyplot as plt
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
 from ml_tto.saver import H5Saver
+from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement, ScreenBeamProfileMeasurementResult
+
 
 
 class MockBeamline:
@@ -82,7 +80,7 @@ class MockBeamline:
         result = MagicMock(ScreenBeamProfileMeasurementResult)
         result.rms_sizes = np.stack([sigma_x, sigma_y]).T
         result.centroids = self.roi.radius[0] * np.ones((args[0], 2))
-        result.signal_to_noise_ratio = np.ones(2) * 10.0
+        result.signal_to_noise_ratios = np.ones(2) * 10.0
 
         # simulate the beam losing intensity on the edges
         intensity = 10 ** (6.0 - 0.5 * np.abs(self.beamline.Q0.k1.numpy()))
