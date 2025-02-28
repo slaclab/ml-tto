@@ -180,7 +180,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
             try:
                 current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 saver = H5Saver()
-                saver.save_to_h5(
+                saver.dump(
                     result_dict,
                     os.path.join(self.save_location, f"emittance_{current_datetime}.h5"),
                 )

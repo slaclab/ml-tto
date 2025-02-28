@@ -184,7 +184,7 @@ def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None):
     # Parses h5 values needed
     if os.path.exists(h5_filename):
         saver = H5Saver()
-        result_dict = saver.load_from_h5(filepath=h5_filename)
+        result_dict = saver.load(filepath=h5_filename)
     else:
         raise OSError(f"File {h5_filename} is not found.")
 

@@ -266,10 +266,10 @@ class TestAutomaticEmittance:
         # Save results to file
         result_dict = result.model_dump()
         saver = H5Saver()
-        saver.save_to_h5(result_dict, "emittance_test.h5")
+        saver.dump(result_dict, "emittance_test.h5")
 
         # Load results from file
-        loaded_dict = saver.load_from_h5("emittance_test.h5")
+        loaded_dict = saver.load("emittance_test.h5")
 
         # Check if the loaded dictionary is the same as the original
         assert result_dict.keys() == loaded_dict.keys()

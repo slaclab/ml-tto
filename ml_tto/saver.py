@@ -7,13 +7,13 @@ import pandas as pd
 
 class H5Saver:
     """
-    Class to save and load dictionaries to and from HDF5 files.
+    Class to dump and load dictionaries to and from HDF5 files.
 
     Methods
     -------
-    save_to_h5(data, filepath)
-        Saves a dictionary to an HDF5 file.
-    load_from_h5(filepath)
+    dump(data, filepath)
+        Dumps a dictionary to an HDF5 file.
+    load(filepath)
         Loads a dictionary from an HDF5 file.
     """
 
@@ -30,7 +30,7 @@ class H5Saver:
         self.supported_types = (bool, int, float, np.integer, np.floating)
 
     @validate_call
-    def save_to_h5(self, data: Dict[str, Any], filepath: str):
+    def dump(self, data: Dict[str, Any], filepath: str):
         """
         Save a dictionary to an HDF5 file. 5s
 
@@ -140,7 +140,7 @@ class H5Saver:
         with h5py.File(filepath, "w") as file:
             recursive_save(data, file)
 
-    def load_from_h5(self, filepath):
+    def load(self, filepath):
         """
         Load a dictionary from an HDF5 file.
 
