@@ -21,6 +21,8 @@ from lcls_tools.common.measurements.screen_profile import (
 )
 import time
 
+from ml_tto.automatic_emittance.utils import compute_emit_bmag_machine_units
+
 
 class MLQuadScanEmittance(QuadScanEmittance):
     scan_values: Optional[list[float]] = []
@@ -239,52 +241,17 @@ class MLQuadScanEmittance(QuadScanEmittance):
         else:
             twiss_betas_alphas = None
 
-        # fit scans independently for x/y
-        # only keep data that has non-nan beam sizes -- independent for x/y
-        results = {
-            "emittance": [],
-            "twiss_at_screen": [],
-            "beam_matrix": [],
-            "bmag": [] if twiss_betas_alphas is not None else None,
-            "quadrupole_focusing_strengths": [],
-            "quadrupole_pv_values": [],
-            "rms_beamsizes": [],
+        inputs = {
+            "quad_vals": scan_values,
+            "beamsizes": beam_sizes,
+            "q_len": magnet_length,
+            "rmat": self.rmat,
+            "energy": self.energy,
+            "twiss_design": twiss_betas_alphas if twiss_betas_alphas is not None else None,
         }
 
-        for i in range(2):
-            single_beam_size = beam_sizes[i][~np.isnan(beam_sizes[i])]
-            beam_size_squared = (single_beam_size * 1e3) ** 2
-            kmod = bdes_to_kmod(
-                self.energy, magnet_length, scan_values[i][~np.isnan(beam_sizes[i])]
-            )
-
-            # negate for y
-            if i == 1:
-                kmod = -1 * kmod
-
-            # compute emittance and bmag
-            result = compute_emit_bmag(
-                k=kmod,
-                beamsize_squared=beam_size_squared.T,
-                q_len=magnet_length,
-                rmat=self.rmat[i],
-                twiss_design=twiss_betas_alphas[i]
-                if twiss_betas_alphas is not None
-                else None,
-            )
-            result.update({"quadrupole_focusing_strengths": kmod})
-            result.update(
-                {"quadrupole_pv_values": scan_values[i][~np.isnan(beam_sizes[i])]}
-            )
-
-            # add results to dict object
-            for name, value in result.items():
-                if name == "bmag" and value is None:
-                    continue
-                else:
-                    results[name].append(value)
-
-            results["rms_beamsizes"].append(single_beam_size)
+        # Call wrapper that takes quads in machine units and beamsize in meters
+        results = compute_emit_bmag_machine_units(**inputs)
 
         results.update({"metadata": self.model_dump()})
 
