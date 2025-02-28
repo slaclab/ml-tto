@@ -6,7 +6,9 @@ from lcls_tools.common.measurements.screen_profile import (
 )
 from lcls_tools.common.data.model_general_calcs import bdes_to_kmod
 from lcls_tools.common.data.emittance import compute_emit_bmag
-from lcls_tools.common.measurements.emittance_measurement import EmittanceMeasurementResult
+from lcls_tools.common.measurements.emittance_measurement import (
+    EmittanceMeasurementResult,
+)
 
 from ml_tto.saver import H5Saver
 
@@ -156,9 +158,7 @@ def calculate_bounding_box_penalty(
         raise ValueError(f"ROI type {type(roi)} is not supported for ")
 
 
-def emittance_from_h5(
-    h5_filename: str, thin_lens=False, maxiter=None
-):
+def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None):
     """
     Parse HDF5 values needed for emittance calculation and calculate the emittance.
 
@@ -189,8 +189,10 @@ def emittance_from_h5(
         raise OSError(f"File {h5_filename} is not found.")
 
     inputs = {
-        "quad_vals": result_dict["quadrupole_pv_values"],  # dict, in kG
-        "beamsizes": result_dict["rms_beamsizes"],  # dict, in m
+        "quad_vals": [
+            i for i in result_dict["quadrupole_pv_values"].values()
+        ],  # list, in kG
+        "beamsizes": [i for i in result_dict["rms_beamsizes"].values()],  # list, in m
         "q_len": result_dict["metadata"]["magnet"]["metadata"]["l_eff"],  # in m
         "rmat": result_dict["metadata"]["rmat"],  # 2D array
         "energy": result_dict["metadata"]["energy"],  # in eV
@@ -226,8 +228,8 @@ def emittance_from_h5(
 
 
 def compute_emit_bmag_machine_units(
-    quad_vals: dict,
-    beamsizes: dict,
+    quad_vals: list,
+    beamsizes: list,
     q_len: float,
     rmat: np.ndarray,
     energy: float,
@@ -240,14 +242,14 @@ def compute_emit_bmag_machine_units(
 
     Parameters
     ----------
-    quad_vals : dict
-        A dict containing the quadrupole values in kG for x and y respectively.
-    beamsizes : dict
-        A dict containing the beam sizes in meters for x and y respectively.
+    quad_vals : list
+        A list of two arrays containing the quadrupole values in kG for x and y respectively.
+    beamsizes : list
+        A list of two arrays containing the beam sizes in meters for x and y respectively.
     q_len : float
         The effective length of the quadrupole in meters.
     rmat : np.ndarray
-        The R-matrix. Shape (2, 2).
+        The R-matrix. Shape (2, 2, 2).
     energy : float
         The energy of the beam in eV.
     twiss_design : np.ndarray or None
@@ -292,33 +294,30 @@ def compute_emit_bmag_machine_units(
         )
 
         result.update({"quadrupole_focusing_strengths": kmod_list[i]})
-        result.update(
-            {"quadrupole_pv_values": quad_vals[f"{i}"][~np.isnan(beamsizes[f"{i}"])]}
-        )
+        result.update({"quadrupole_pv_values": quad_vals[i][~np.isnan(beamsizes[i])]})
 
         # add results to dict object
         for name, value in result.items():
             if name == "bmag" and value is None:
                 continue
-            else: # beam matrix and emittance get appended
-                print(name, value)
+            else:  # beam matrix and emittance get appended
                 results[name].append(value)
 
-        results["rms_beamsizes"].append(beamsizes[f"{i}"][~np.isnan(beamsizes[f"{i}"])])
+        results["rms_beamsizes"].append(beamsizes[i][~np.isnan(beamsizes[i])])
 
     return results
 
 
-def preprocess_inputs(quad_vals: dict, beamsizes: dict, energy: float, q_len: float):
+def preprocess_inputs(quad_vals: list, beamsizes: list, energy: float, q_len: float):
     """
     Preprocesses the inputs for compute_emit_bmag.
 
     Parameters
     ----------
-    quad_vals : dict
-        A dict containing the quadrupole values in kG for x and y respectively.
+    quad_vals : list
+        A list of two arrays containing the quadrupole values in kG for x and y respectively.
     beamsizes : dict
-        A dict containing the beam sizes in meters for x and y respectively.
+        A list of two arrays containing the beam sizes in meters for x and y respectively.
     energy : float
         The energy of the beam in eV.
     q_len : float
@@ -334,9 +333,9 @@ def preprocess_inputs(quad_vals: dict, beamsizes: dict, energy: float, q_len: fl
 
     for i in range(2):
         # Get rid of nans
-        idx = ~np.isnan(beamsizes[f"{i}"])
-        q = quad_vals[f"{i}"][idx]
-        b = beamsizes[f"{i}"][idx]
+        idx = ~np.isnan(beamsizes[i])
+        q = quad_vals[i][idx]
+        b = beamsizes[i][idx]
 
         # Beamsizes to mm squared
         beamsizes_squared_list.append((b * 1e3) ** 2)

@@ -125,14 +125,14 @@ class H5Saver:
                 elif isinstance(val, pd.DataFrame):
                     # save DataFrame as a group with datasets for columns
                     group = f.create_group(key)
-                    group.attrs['pandas_type'] = 'dataframe'
-                    group.attrs['columns'] = list(val.columns)
+                    group.attrs["pandas_type"] = "dataframe"
+                    group.attrs["columns"] = list(val.columns)
                     for col in val.columns:
                         if val[col].dtype == np.dtype("O"):
                             try:
-                                val[col] = val[col].astype('float64')
+                                val[col] = val[col].astype("float64")
                             except ValueError:
-                                val[col] = val[col].astype('string')
+                                val[col] = val[col].astype("string")
                         group.create_dataset(col, data=val[col].values)
                 else:
                     f.create_dataset(key, data=str(val), dtype=dt, track_order=True)
@@ -159,9 +159,12 @@ class H5Saver:
             d = {"attrs": dict(f.attrs)} if f.attrs else {}
             for key, val in f.items():
                 if isinstance(val, h5py.Group):
-                    if 'pandas_type' in val.attrs and val.attrs['pandas_type'] == 'dataframe':
+                    if (
+                        "pandas_type" in val.attrs
+                        and val.attrs["pandas_type"] == "dataframe"
+                    ):
                         # Load DataFrame from group
-                        columns = val.attrs['columns']
+                        columns = val.attrs["columns"]
                         data = {}
                         for col in columns:
                             data[col] = val[col][:]
