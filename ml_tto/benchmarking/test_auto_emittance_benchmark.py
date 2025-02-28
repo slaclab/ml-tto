@@ -40,7 +40,7 @@ class MockBeamline:
             area="test", beam_path=["test"], sum_l_meters=None, l_eff=0.1
         )
 
-        self.roi = CircularROI(center=[1, 1], radius=500)
+        self.roi = CircularROI(center=[1, 1], radius=1000)
         self.screen_resolution = 1.0  # resolution of the screen in um / px
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
         self.beamsize_measurement.device = MagicMock(spec=Screen)
@@ -79,10 +79,11 @@ class MockBeamline:
 
         result = MagicMock(ScreenBeamProfileMeasurementResult)
         result.rms_sizes = np.stack([sigma_x, sigma_y]).T
-        result.centroids = np.zeros((args[0], 2))
+        result.centroids = self.roi.radius[0] * np.ones((args[0], 2))
 
         # simulate the beam losing intensity on the edges
         intensity = 10 ** (6.0 - 0.5 * np.abs(self.beamline.Q0.k1.numpy()))
+        # intensity = 1e6
 
         result.total_intensities = np.ones(args[0]) * intensity
         result.metadata = MagicMock()
@@ -90,6 +91,7 @@ class MockBeamline:
         result.metadata.image_processor.roi = self.roi
 
         return result
+
 
 
 def run_calc():

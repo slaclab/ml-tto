@@ -1,22 +1,24 @@
 from copy import deepcopy
-import os
 import warnings
+
+import numpy as np
 from xopt import Xopt, Evaluator, VOCS
-from xopt.generators.bayesian import ExpectedImprovementGenerator, UpperConfidenceBoundGenerator
-from xopt.utils import get_local_region
+from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
-from lcls_tools.common.measurements.emittance_measurement import QuadScanEmittance
+from lcls_tools.common.measurements.emittance_measurement import (
+    QuadScanEmittance,
+    EmittanceMeasurementResult,
+)
 from lcls_tools.common.image.roi import ROI
-from typing import Optional
+from lcls_tools.common.data.emittance import compute_emit_bmag
+from lcls_tools.common.data.model_general_calcs import bdes_to_kmod, get_optics
+from typing import Optional, Tuple
 
 from pydantic import PositiveInt, field_validator
 
 from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
 )
-from ml_tto.automatic_emittance.utils import validate_beamsize_measurement_result
-from ml_tto.saver import H5Saver
-from datetime import datetime
 import time
 
 
@@ -29,6 +31,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     bounding_box_factor: float = 2.0
     min_log10_intensity: float = 3.0
+    cutoff_max: float = 3.0
     visualize_bo: bool = False
     verbose: bool = False
 
@@ -41,12 +44,13 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 "Beamsize measurement must be a ScreenBeamProfileMeasurement for MLQuadScanEmittance"
             )
 
-        # check to make sure the the beamsize measurement screen has a region of interest
-        if not isinstance(v.image_processor.roi, ROI):
-            raise ValueError(
-                "Beamsize measurement screen must have a region of interest"
-            )
         return v
+        # check to make sure the the beamsize measurement screen has a region of interest
+        # if not isinstance(v.image_processor.roi, ROI):
+        #    raise ValueError(
+        #        "Beamsize measurement screen must have a region of interest"
+        #    )
+        # return v
 
     def _evaluate(self, inputs):
         # set quadrupole strength
@@ -61,7 +65,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         time.sleep(0.02)
         while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
             time.sleep(0.05)
-        
+
         if self.verbose:
             print(f"Quadrupole strength bact is {self.magnet.bact}")
 
@@ -69,25 +73,31 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self.measure_beamsize()
         fit_result = self._info[-1]
 
-        # validate the beamsize measurement
-        validated_result, bb_penalty, log10_total_intensity = (
-            validate_beamsize_measurement_result(
-                fit_result,
-                self.beamsize_measurement.image_processor.roi,
-                n_stds=self.bounding_box_factor,
-                min_log10_intensity=self.min_log10_intensity,
-            )
-        )
+        # # validate the beamsize measurement
+        # validated_result, bb_penalty, log10_total_intensity = (
+        #     validate_beamsize_measurement_result(
+        #         fit_result,
+        #         self.beamsize_measurement.image_processor.roi,
+        #         n_stds=self.bounding_box_factor,
+        #         min_log10_intensity=self.min_log10_intensity,
+        #     )
+        # )
 
         # replace last element of info with validated result
+        validated_result = fit_result
         self._info[-1] = validated_result
 
         # collect results
+        rms_x = validated_result.rms_sizes[:, 0] / 100
+        rms_y = validated_result.rms_sizes[:, 1] / 100
+
+        # replace any nan values with 10.0
+        rms_x[np.isnan(rms_x)] = 10.0
+        rms_y[np.isnan(rms_y)] = 10.0
+
         results = {
-            "bb_penalty": bb_penalty,
-            "log10_total_intensity": log10_total_intensity,
-            "scaled_x_rms_px": validated_result.rms_sizes[:, 0] / 100,
-            "scaled_y_rms_px": validated_result.rms_sizes[:, 1] / 100,
+            "scaled_x_rms_px": rms_x,
+            "scaled_y_rms_px": rms_y,
         }
         if self.verbose:
             print(f"Results: {results}")
@@ -103,10 +113,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         x_vocs = VOCS(
             variables={"k": k_range},
             objectives={"scaled_x_rms_px": "MINIMIZE"},
-            constraints={
-                "bb_penalty": ["LESS_THAN", 0.0],
-                "log10_total_intensity": ["GREATER_THAN", self.min_log10_intensity],
-            },
             observables=["scaled_x_rms_px", "scaled_y_rms_px"],
         )
         y_vocs = deepcopy(x_vocs)
@@ -124,9 +130,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
             warnings.simplefilter("ignore")
             generator = UpperConfidenceBoundGenerator(
                 vocs=x_vocs,
-                beta=100.0,
+                beta=1000.0,
                 numerical_optimizer=GridOptimizer(n_grid_points=100),
-                n_interpolate_points=5,
+                n_interpolate_points=3,
                 n_monte_carlo_samples=64,
             )
 
@@ -136,11 +142,21 @@ class MLQuadScanEmittance(QuadScanEmittance):
             X.evaluate_data({"k": current_k})
 
             # get local region around current value and make some samples
-            local_region = get_local_region({"k": current_k}, x_vocs)
-            X.random_evaluate(self.n_initial_samples, custom_bounds=local_region)
+            # local_region = get_local_region({"k": current_k}, x_vocs)
+            # X.random_evaluate(self.n_initial_samples, custom_bounds=local_region)
+
+            X.evaluate_data({"k": np.linspace(k_range[0], k_range[1], 5)})
 
             # run iterations for x/y -- ignore warnings from UCB generator
             for _ in range(self.n_iterations):
+                min_size = np.nanmin(X.data["scaled_x_rms_px"].to_numpy(dtype="float"))
+                x_vocs.constraints = {
+                    "scaled_x_rms_px": ["LESS_THAN", self.cutoff_max * min_size]
+                }
+
+                X.vocs = x_vocs
+                X.generator.vocs = x_vocs
+
                 if self.visualize_bo:
                     X.generator.train_model()
                     X.generator.visualize_model(
@@ -153,6 +169,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
             X.vocs = y_vocs
             X.generator.vocs = y_vocs
             for _ in range(self.n_iterations):
+                min_size = np.nanmin(X.data["scaled_y_rms_px"].to_numpy(dtype="float"))
+                y_vocs.constraints = {
+                    "scaled_y_rms_px": ["LESS_THAN", self.cutoff_max * min_size]
+                }
+
+                X.vocs = y_vocs
+                X.generator.vocs = y_vocs
+
                 if self.visualize_bo:
                     X.generator.train_model()
                     X.generator.visualize_model(
@@ -169,21 +193,126 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     def measure(self):
         """
-        Modify the result of the emittance measurement to include the images
+        Conduct quadrupole scan to measure the beam phase space.
+
+        Returns:
+        -------
+        result : EmittanceMeasurementResult
+            Object containing the results of the emittance measurement
         """
-        result = super().measure()
-        result_dict = result.model_dump()
 
-        result_dict["image_data"] = [ele.model_dump() for ele in self._info]
+        self._info = []
+        # scan magnet strength and measure beamsize
+        self.perform_beamsize_measurements()
 
-        if self.save_location is not None:
-            try:
-                current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                saver = H5Saver()
-                saver.dump(
-                    result_dict,
-                    os.path.join(self.save_location, f"emittance_{current_datetime}.h5"),
-                )
-            except Exception as e:
-                warnings.warn(f"File saving failed. {e}", RuntimeWarning)
-        return result
+        # extract beam sizes from info
+        scan_values, beam_sizes = self._get_beamsizes_scan_values_from_info()
+
+        # get transport matrix and design twiss values from meme
+        # TODO: get settings from arbitrary methods (ie. not meme)
+        if self.rmat is None and self.design_twiss is None:
+            optics = get_optics(
+                self.magnet_name,
+                self.device_measurement.device.name,
+            )
+
+            self.rmat = optics["rmat"]
+            self.design_twiss = optics["design_twiss"]
+
+        magnet_length = self.magnet.metadata.l_eff
+        if magnet_length is None:
+            raise ValueError(
+                "magnet length needs to be specified for magnet "
+                f"{self.magnet.name} to be used in emittance measurement"
+            )
+
+        # organize data into arrays for use in `compute_emit_bmag`
+        # rmat = np.stack([self.rmat[0:2, 0:2], self.rmat[2:4, 2:4]])
+        if self.design_twiss:
+            twiss_betas_alphas = np.array(
+                [
+                    [self.design_twiss["beta_x"], self.design_twiss["alpha_x"]],
+                    [self.design_twiss["beta_y"], self.design_twiss["alpha_y"]],
+                ]
+            )
+
+        else:
+            twiss_betas_alphas = None
+
+        # fit scans independently for x/y
+        # only keep data that has non-nan beam sizes -- independent for x/y
+        results = {
+            "emittance": [],
+            "twiss_at_screen": [],
+            "beam_matrix": [],
+            "bmag": [] if twiss_betas_alphas is not None else None,
+            "quadrupole_focusing_strengths": [],
+            "quadrupole_pv_values": [],
+            "rms_beamsizes": [],
+        }
+
+        for i in range(2):
+            single_beam_size = beam_sizes[i][~np.isnan(beam_sizes[i])]
+            beam_size_squared = (single_beam_size * 1e3) ** 2
+            kmod = bdes_to_kmod(
+                self.energy, magnet_length, scan_values[i][~np.isnan(beam_sizes[i])]
+            )
+
+            # negate for y
+            if i == 1:
+                kmod = -1 * kmod
+
+            # compute emittance and bmag
+            result = compute_emit_bmag(
+                k=kmod,
+                beamsize_squared=beam_size_squared.T,
+                q_len=magnet_length,
+                rmat=self.rmat[i],
+                twiss_design=twiss_betas_alphas[i]
+                if twiss_betas_alphas is not None
+                else None,
+            )
+            result.update({"quadrupole_focusing_strengths": kmod})
+            result.update(
+                {"quadrupole_pv_values": scan_values[i][~np.isnan(beam_sizes[i])]}
+            )
+
+            # add results to dict object
+            for name, value in result.items():
+                if name == "bmag" and value is None:
+                    continue
+                else:
+                    results[name].append(value)
+
+            results["rms_beamsizes"].append(single_beam_size)
+
+        results.update({"metadata": self.model_dump()})
+
+        # collect information into EmittanceMeasurementResult object
+        return EmittanceMeasurementResult(**results)
+
+    def _get_beamsizes_scan_values_from_info(self) -> Tuple[np.ndarray]:
+        """
+        Extract the mean rms beam sizes from the info list, units in meters.
+        """
+        beam_sizes = []
+        for ele in self._info:
+            beam_sizes.append(
+                np.mean(ele.rms_sizes, axis=0)
+                * self.beamsize_measurement.device.resolution
+                * 1e-6
+            )
+
+        # get scan values and extend for each direction
+        scan_values = np.tile(np.array(self.scan_values), (2, 1))
+
+        beam_sizes = np.array(beam_sizes).T
+
+        for i in range(2):
+            min_observed_size = np.nanmin(beam_sizes[i])
+
+            # cut out any indicies where the beam size is larger than some amount
+            mask = beam_sizes[i] > self.cutoff_max * min_observed_size
+            beam_sizes[i][mask] = np.nan
+
+        return scan_values, beam_sizes
