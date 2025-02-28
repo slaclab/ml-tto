@@ -108,7 +108,9 @@ class TestSaver:
         assert data["bool"] == loaded_data["bool"]
         assert data["string"] == loaded_data["string"]
         assert data["list"] == loaded_data["list"].tolist()
-        assert list(data["tuple"]) == loaded_data["tuple"].tolist() # tuple are saved as arrays
+        assert (
+            list(data["tuple"]) == loaded_data["tuple"].tolist()
+        )  # tuple are saved as arrays
         assert data["dict"] == loaded_data["dict"]
         assert np.array_equal(data["ndarray"], loaded_data["ndarray"])
 
@@ -134,13 +136,7 @@ class TestSaver:
     def test_nested_structures(self):
         saver = H5Saver()
         data = {
-            "nested_dict": {
-                "level1": {
-                    "level2": {
-                        "level3": "value"
-                    }
-                }
-            },
+            "nested_dict": {"level1": {"level2": {"level3": "value"}}},
             "nested_list": [[1, 2, 3], [4, 5, 6]],
         }
         saver.save_to_h5(data, "test_nested.h5")
@@ -151,13 +147,13 @@ class TestSaver:
         for i in range(len(data["nested_list"])):
             # lists of lists are saved as dicts
             # here the lists are saved as nd.arrays
-            assert np.array_equal(data["nested_list"][i], loaded_data["nested_list"][f"{i}"])
+            assert np.array_equal(
+                data["nested_list"][i], loaded_data["nested_list"][f"{i}"]
+            )
 
     def test_object_arrays(self):
         saver = H5Saver()
-        data = {
-            "object_array": np.array([1, "a", 3.14], dtype=object)
-        }
+        data = {"object_array": np.array([1, "a", 3.14], dtype=object)}
         saver.save_to_h5(data, "test_object_array.h5")
         loaded_data = saver.load_from_h5("test_object_array.h5")
         os.remove("test_object_array.h5")
@@ -166,14 +162,14 @@ class TestSaver:
 
     def test_list_of_ndarrays(self):
         saver = H5Saver()
-        data = {
-            "list_of_ndarrays": [np.array([1, 2, 3]), np.array([4, 5, 6])]
-        }
+        data = {"list_of_ndarrays": [np.array([1, 2, 3]), np.array([4, 5, 6])]}
         saver.save_to_h5(data, "test_list_of_ndarrays.h5")
         loaded_data = saver.load_from_h5("test_list_of_ndarrays.h5")
         os.remove("test_list_of_ndarrays.h5")
 
         assert len(data["list_of_ndarrays"]) == len(loaded_data["list_of_ndarrays"])
-        for original, loaded in zip(data["list_of_ndarrays"], loaded_data["list_of_ndarrays"].values()):
+        for original, loaded in zip(
+            data["list_of_ndarrays"], loaded_data["list_of_ndarrays"].values()
+        ):
             # lists of ndarrays are saved as dicts
             assert np.array_equal(original, loaded)
