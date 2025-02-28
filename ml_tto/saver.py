@@ -57,6 +57,7 @@ class H5Saver:
                     if all(isinstance(ele, self.supported_types) for ele in val):
                         f.create_dataset(key, data=val, track_order=True)
                     elif all(isinstance(ele, np.ndarray) for ele in val):
+                        # save np.arrays as datasets
                         for i, ele in enumerate(val):
                             f.create_dataset(f"{key}/{i}", data=ele, track_order=True)
                             if ele.dtype == np.dtype("O"):
@@ -67,11 +68,35 @@ class H5Saver:
                                     track_order=True,
                                 )
                     elif all(isinstance(ele, dict) for ele in val):
+                        # save dictionaries as groups recursively
                         for i, ele in enumerate(val):
                             group = f.create_group(f"{key}/{i}", track_order=True)
                             recursive_save(ele, group)
+                    elif all(isinstance(ele, tuple) for ele in val):
+                        # save tuples as np.array
+                        for i, ele in enumerate(val):
+                            val_array = np.array(ele)
+                            f.create_dataset(
+                                f"{key}/{i}", data=val_array, track_order=True
+                            )
+                    elif all(isinstance(ele, list) for ele in val):
+                        # if it's  a list of lists, save as np.array if homogeneous and type allows
+                        # else save as strings
+                        for i, ele in enumerate(val):
+                            if all(isinstance(j, self.supported_types) for j in ele):
+                                f.create_dataset(
+                                    f"{key}/{i}", data=np.array(ele), track_order=True
+                                )
+                            else:
+                                f.create_dataset(
+                                    f"{key}/{i}",
+                                    data=str(ele),
+                                    dtype=dt,
+                                    track_order=True,
+                                )
                     else:
                         for i, ele in enumerate(val):
+                            # if it's a list of mixed types, save as strings
                             if isinstance(ele, str):
                                 f.create_dataset(
                                     f"{key}/{i}", data=ele, dtype=dt, track_order=True
@@ -90,6 +115,9 @@ class H5Saver:
                         f.create_dataset(key, data=val, track_order=True)
                     else:
                         f.create_dataset(key, data=str(val), dtype=dt, track_order=True)
+                elif isinstance(val, tuple):
+                    val_array = np.array(val)
+                    f.create_dataset(key, data=val_array, track_order=True)
                 elif isinstance(val, str):
                     # specify string dtype to avoid issues with encodings
                     f.create_dataset(key, data=val, dtype=dt, track_order=True)

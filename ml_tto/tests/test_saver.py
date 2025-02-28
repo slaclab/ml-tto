@@ -86,3 +86,94 @@ class TestSaver:
         )
 
         os.remove("screen_test.h5")
+
+    def test_basic_data_types(self):
+        saver = H5Saver()
+        data = {
+            "int": 42,
+            "float": 3.14,
+            "bool": True,
+            "string": "test",
+            "list": [1, 2, 3],
+            "tuple": (4, 5, 6),
+            "dict": {"a": 1, "b": 2},
+            "ndarray": np.array([7, 8, 9]),
+        }
+        saver.save_to_h5(data, "test_basic.h5")
+        loaded_data = saver.load_from_h5("test_basic.h5")
+        os.remove("test_basic.h5")
+
+        assert data["int"] == loaded_data["int"]
+        assert data["float"] == loaded_data["float"]
+        assert data["bool"] == loaded_data["bool"]
+        assert data["string"] == loaded_data["string"]
+        assert data["list"] == loaded_data["list"].tolist()
+        assert list(data["tuple"]) == loaded_data["tuple"].tolist() # tuple are saved as arrays
+        assert data["dict"] == loaded_data["dict"]
+        assert np.array_equal(data["ndarray"], loaded_data["ndarray"])
+
+    def test_special_values(self):
+        saver = H5Saver()
+        data = {
+            "nan": np.nan,
+            "inf": np.inf,
+            "ninf": -np.inf,
+            "nan_list": [np.nan, np.inf, -np.inf],
+        }
+        saver.save_to_h5(data, "test_special.h5")
+        loaded_data = saver.load_from_h5("test_special.h5")
+        os.remove("test_special.h5")
+
+        assert np.isnan(loaded_data["nan"])
+        assert np.isinf(loaded_data["inf"])
+        assert np.isneginf(loaded_data["ninf"])
+        assert np.isnan(loaded_data["nan_list"][0])
+        assert np.isinf(loaded_data["nan_list"][1])
+        assert np.isneginf(loaded_data["nan_list"][2])
+
+    def test_nested_structures(self):
+        saver = H5Saver()
+        data = {
+            "nested_dict": {
+                "level1": {
+                    "level2": {
+                        "level3": "value"
+                    }
+                }
+            },
+            "nested_list": [[1, 2, 3], [4, 5, 6]],
+        }
+        saver.save_to_h5(data, "test_nested.h5")
+        loaded_data = saver.load_from_h5("test_nested.h5")
+        os.remove("test_nested.h5")
+
+        assert data["nested_dict"] == loaded_data["nested_dict"]
+        for i in range(len(data["nested_list"])):
+            # lists of lists are saved as dicts
+            # here the lists are saved as nd.arrays
+            assert np.array_equal(data["nested_list"][i], loaded_data["nested_list"][f"{i}"])
+
+    def test_object_arrays(self):
+        saver = H5Saver()
+        data = {
+            "object_array": np.array([1, "a", 3.14], dtype=object)
+        }
+        saver.save_to_h5(data, "test_object_array.h5")
+        loaded_data = saver.load_from_h5("test_object_array.h5")
+        os.remove("test_object_array.h5")
+
+        assert all(isinstance(item, str) for item in loaded_data["object_array"])
+
+    def test_list_of_ndarrays(self):
+        saver = H5Saver()
+        data = {
+            "list_of_ndarrays": [np.array([1, 2, 3]), np.array([4, 5, 6])]
+        }
+        saver.save_to_h5(data, "test_list_of_ndarrays.h5")
+        loaded_data = saver.load_from_h5("test_list_of_ndarrays.h5")
+        os.remove("test_list_of_ndarrays.h5")
+
+        assert len(data["list_of_ndarrays"]) == len(loaded_data["list_of_ndarrays"])
+        for original, loaded in zip(data["list_of_ndarrays"], loaded_data["list_of_ndarrays"].values()):
+            # lists of ndarrays are saved as dicts
+            assert np.array_equal(original, loaded)
