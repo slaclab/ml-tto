@@ -158,7 +158,7 @@ def calculate_bounding_box_penalty(
 
 def emittance_from_h5(
     h5_filename: str, thin_lens=False, maxiter=None
-):  # TODO: check if any of these could be none or key not found
+):
     """
     Parse HDF5 values needed for emittance calculation and calculate the emittance.
 
