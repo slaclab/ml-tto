@@ -2,6 +2,7 @@ from typing import Dict, Any
 import h5py
 import numpy as np
 from pydantic import validate_call
+import pandas as pd
 
 
 class H5Saver:
@@ -121,6 +122,18 @@ class H5Saver:
                 elif isinstance(val, str):
                     # specify string dtype to avoid issues with encodings
                     f.create_dataset(key, data=val, dtype=dt, track_order=True)
+                elif isinstance(val, pd.DataFrame):
+                    # save DataFrame as a group with datasets for columns
+                    group = f.create_group(key)
+                    group.attrs['pandas_type'] = 'dataframe'
+                    group.attrs['columns'] = list(val.columns)
+                    for col in val.columns:
+                        if val[col].dtype == np.dtype("O"):
+                            try:
+                                val[col] = val[col].astype('float64')
+                            except ValueError:
+                                val[col] = val[col].astype('string')
+                        group.create_dataset(col, data=val[col].values)
                 else:
                     f.create_dataset(key, data=str(val), dtype=dt, track_order=True)
 
@@ -146,7 +159,15 @@ class H5Saver:
             d = {"attrs": dict(f.attrs)} if f.attrs else {}
             for key, val in f.items():
                 if isinstance(val, h5py.Group):
-                    d[key] = recursive_load(val)
+                    if 'pandas_type' in val.attrs and val.attrs['pandas_type'] == 'dataframe':
+                        # Load DataFrame from group
+                        columns = val.attrs['columns']
+                        data = {}
+                        for col in columns:
+                            data[col] = val[col][:]
+                        d[key] = pd.DataFrame(data)
+                    else:
+                        d[key] = recursive_load(val)
                 elif isinstance(val, h5py.Dataset):
                     if isinstance(val[()], bytes):
                         d[key] = val[()].decode(self.string_dtype)
