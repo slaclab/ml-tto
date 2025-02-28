@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
+from ml_tto.saver import H5Saver
 
 
 class MockBeamline:
@@ -262,3 +263,16 @@ class TestAutomaticEmittance:
 
         # Call the measure method
         result = quad_scan.measure()
+
+        # Save results to file
+        result_dict = result.model_dump()
+        saver = H5Saver()
+        saver.dump(result_dict, "emittance_test.h5")
+
+        # Load results from file
+        loaded_dict = saver.load("emittance_test.h5")
+
+        # Check if the loaded dictionary is the same as the original
+        assert result_dict.keys() == loaded_dict.keys()
+        # TODO: continue test
+
