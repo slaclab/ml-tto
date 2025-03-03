@@ -252,7 +252,6 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         rms_size = np.array(fresult.rms_size)
         centroid = np.array(fresult.centroid)
-        print(rms_size, centroid)
 
         # if all rms sizes are nan then we can't crop the image
         if np.all(np.isnan(rms_size)):
@@ -285,7 +284,6 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
             crop_ranges[1][0] : crop_ranges[1][1], crop_ranges[0][0] : crop_ranges[0][1]
         ]
 
-        print(centroid, rms_size)
         # do final fit
         self.beam_extent_n_stds = 2.0
         result = super()._fit_image(cropped_image)
