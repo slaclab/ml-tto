@@ -10,7 +10,9 @@ import torch
 from gpytorch import ExactMarginalLogLikelihood
 
 
-def evaluate_concavity(x: np.ndarray, y: np.ndarray):
+def evaluate_concavity(
+    x: np.ndarray, y: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Identifies which points in the data are in regions of upward concavity
     using posterior mean of GP fit to the data.
@@ -26,7 +28,7 @@ def evaluate_concavity(x: np.ndarray, y: np.ndarray):
                         posterior mean of GP fit to the data
         fit_x: linspace over which the GP posterior mean has been evaluated
         fit_y: GP posterior mean evaluated on the linspace fit_x
-        fit_concavity: truth table specifying which points fit_x/fit_y are
+        fit_concavity: truth table specifying which points in fit_x/fit_y are
                         in a region of upward concavity according to GP
                         posterior mean
     """
