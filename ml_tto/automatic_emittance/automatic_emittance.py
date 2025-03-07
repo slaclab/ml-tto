@@ -25,12 +25,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
     scan_values: Optional[list[float]] = []
     n_initial_samples: PositiveInt = 3
     n_iterations: PositiveInt = 5
-    max_scan_range: Optional[list[float]] = None
-    xopt_object: Optional[Xopt] = None
+    max_scan_range: Optional[list[float]] = [-10.0, 10.0]
+    X: Optional[Xopt] = None
 
-    bounding_box_factor: float = 2.0
-    min_log10_intensity: float = 3.0
-    cutoff_max: float = 3.0
+    min_signal_to_noise_ratio: float = 4.0
+    n_interpolate_points: Optional[PositiveInt] = 3
+    n_grid_points: PositiveInt = 100
+    beamsize_cutoff_max: float = 3.0
+    beta: float = 10000.0
     visualize_bo: bool = False
     verbose: bool = False
 
@@ -72,16 +74,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self.measure_beamsize()
         fit_result = self._info[-1]
 
-        # # validate the beamsize measurement
-        # validated_result, bb_penalty, log10_total_intensity = (
-        #     validate_beamsize_measurement_result(
-        #         fit_result,
-        #         self.beamsize_measurement.image_processor.roi,
-        #         n_stds=self.bounding_box_factor,
-        #         min_log10_intensity=self.min_log10_intensity,
-        #     )
-        # )
-
         # replace last element of info with validated result
         validated_result = fit_result
         self._info[-1] = validated_result
@@ -89,10 +81,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # collect results
         rms_x = validated_result.rms_sizes[:, 0] / 100
         rms_y = validated_result.rms_sizes[:, 1] / 100
-
-        # replace any nan values with 10.0
-        #rms_x[np.isnan(rms_x)] = 10.0
-        #rms_y[np.isnan(rms_y)] = 10.0
 
         results = {
             "scaled_x_rms_px": rms_x,
@@ -106,93 +94,65 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         return results
 
+    def create_xopt_object(self, vocs):
+        evaluator = Evaluator(function=self._evaluate)
+        generator = UpperConfidenceBoundGenerator(
+            vocs=vocs,
+            beta=self.beta,
+            numerical_optimizer=GridOptimizer(n_grid_points=self.n_grid_points),
+            n_interpolate_points=self.n_interpolate_points,
+            n_monte_carlo_samples=64,
+        )
+        self.X = Xopt(vocs=vocs, evaluator=evaluator, generator=generator)
+
+    def update_xopt_object(self, vocs):
+        self.X.vocs = vocs
+        self.X.generator.vocs = vocs
+
+    def reset(self):
+        self.scan_values = []
+        self._info = []
+
+    def run_iterations(self, dim_name, n_iterations):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            for _ in range(n_iterations):
+                self.update_xopt_object(self.get_vocs(dim_name))
+
+                if self.visualize_bo:
+                    self.X.generator.train_model()
+                    self.X.generator.visualize_model(
+                        exponentiate=True,
+                        show_feasibility=True,
+                    )
+
+                self.X.step()
+
     def perform_beamsize_measurements(self):
         """
         Run BO-based exploration of the quadrupole strength to get beamsize measurements
         """
-        # define the optimization problem
-        k_range = self.max_scan_range if self.max_scan_range is not None else [-10, 10]
-        x_vocs = VOCS(
-            variables={"k": k_range},
-            objectives={"scaled_x_rms_px": "MINIMIZE"},
-            observables=["scaled_x_rms_px", "scaled_y_rms_px"],
-        )
-        y_vocs = deepcopy(x_vocs)
-        y_vocs.objectives = {"scaled_y_rms_px": "MINIMIZE"}
-
-        self.scan_values = []
-
-        evaluator = Evaluator(function=self._evaluate)
-
         # get current value of k
         current_k = self.magnet.bctrl
 
         # ignore warnings from UCB generator and Xopt
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            generator = UpperConfidenceBoundGenerator(
-                vocs=x_vocs,
-                beta=1000.0,
-                numerical_optimizer=GridOptimizer(n_grid_points=100),
-                n_interpolate_points=3,
-                n_monte_carlo_samples=64,
-            )
+            self.create_xopt_object(self.get_vocs("x"))
 
-            X = Xopt(vocs=x_vocs, evaluator=evaluator, generator=generator)
+        # evaluate the current point
+        self.X.evaluate_data({"k": current_k})
 
-            # evaluate the current point
-            X.evaluate_data({"k": current_k})
+        # fast scan to get initial guess
+        self.X.evaluate_data({"k": np.linspace(*self.max_scan_range, 5)})
 
-            # get local region around current value and make some samples
-            # local_region = get_local_region({"k": current_k}, x_vocs)
-            # X.random_evaluate(self.n_initial_samples, custom_bounds=local_region)
-
-            X.evaluate_data({"k": np.linspace(k_range[0], k_range[1], 5)})
-
-            # run iterations for x/y -- ignore warnings from UCB generator
-            for _ in range(self.n_iterations):
-                min_size = np.nanmin(X.data["scaled_x_rms_px"].to_numpy(dtype="float"))
-                x_vocs.constraints = {
-                    "min_signal_to_noise_ratio": ["GREATER_THAN", 4],
-                    "scaled_x_rms_px": ["LESS_THAN", self.cutoff_max * min_size],
-                }
-
-                X.vocs = x_vocs
-                X.generator.vocs = x_vocs
-
-                if self.visualize_bo:
-                    X.generator.train_model()
-                    X.generator.visualize_model(
-                        exponentiate=True,
-                        show_feasibility=True,
-                    )
-
-                X.step()
-
-            X.vocs = y_vocs
-            X.generator.vocs = y_vocs
-            for _ in range(self.n_iterations):
-                min_size = np.nanmin(X.data["scaled_y_rms_px"].to_numpy(dtype="float"))
-                y_vocs.constraints = {
-                    "scaled_y_rms_px": ["LESS_THAN", self.cutoff_max * min_size]
-                }
-
-                X.vocs = y_vocs
-                X.generator.vocs = y_vocs
-
-                if self.visualize_bo:
-                    X.generator.train_model()
-                    X.generator.visualize_model(
-                        exponentiate=True,
-                        show_feasibility=True,
-                    )
-
-                X.step()
+        # run iterations for x/y -- ignore warnings from UCB generator
+        self.run_iterations("x", self.n_iterations)
+        self.run_iterations("y", self.n_iterations)
 
         # reset quadrupole strength to original value
         self.magnet.bctrl = current_k
-
-        self.xopt_object = X
 
     def measure(self):
         """
@@ -204,9 +164,18 @@ class MLQuadScanEmittance(QuadScanEmittance):
             Object containing the results of the emittance measurement
         """
 
-        self._info = []
+        # reset the scan values and info
+        self.reset()
+
         # scan magnet strength and measure beamsize
         self.perform_beamsize_measurements()
+
+        return self.fit_scan()
+
+    def fit_scan(self):
+        """
+        Run the emittance fit using the measured beam sizes and quadrupole strengths.
+        """
 
         # extract beam sizes from info
         scan_values, beam_sizes = self._get_beamsizes_scan_values_from_info()
@@ -238,7 +207,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
                     [self.design_twiss["beta_y"], self.design_twiss["alpha_y"]],
                 ]
             )
-
         else:
             twiss_betas_alphas = None
 
@@ -282,7 +250,30 @@ class MLQuadScanEmittance(QuadScanEmittance):
             min_observed_size = np.nanmin(beam_sizes[i])
 
             # cut out any indicies where the beam size is larger than some amount
-            mask = beam_sizes[i] > self.cutoff_max * min_observed_size
+            mask = beam_sizes[i] > self.beamsize_cutoff_max * min_observed_size
             beam_sizes[i][mask] = np.nan
 
         return scan_values, beam_sizes
+
+    def get_vocs(self, dim_name):
+        """utility function to create x/y vocs"""
+
+        scan_name = f"scaled_{dim_name}_rms_px"
+        vocs = VOCS(
+            variables={"k": self.max_scan_range},
+            objectives={scan_name: "MINIMIZE"},
+            observables=["scaled_x_rms_px", "scaled_y_rms_px"],
+        )
+
+        if self.X is not None:
+            if self.X.data is not None:
+                min_size = np.nanmin(self.X.data[scan_name].to_numpy(dtype="float"))
+                vocs.constraints = {
+                    "min_signal_to_noise_ratio": [
+                        "GREATER_THAN",
+                        self.min_signal_to_noise_ratio,
+                    ],
+                    "scaled_x_rms_px": ["LESS_THAN", self.beamsize_cutoff_max * min_size],
+                }
+
+        return vocs

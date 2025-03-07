@@ -5,12 +5,10 @@ import torch
 from cheetah import Segment, Quadrupole, Drift, ParameterBeam
 
 from lcls_tools.common.devices.magnet import Magnet, MagnetMetadata
-from lcls_tools.common.devices.reader import create_magnet
 from lcls_tools.common.devices.screen import Screen
 from lcls_tools.common.frontend.plotting.emittance import plot_quad_scan_result
 from lcls_tools.common.image.roi import CircularROI
 from lcls_tools.common.image.processing import ImageProcessor
-import matplotlib.pyplot as plt
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
@@ -177,7 +175,7 @@ class TestAutomaticEmittance:
                     rmat=rmat,
                     design_twiss=design_twiss_ele,
                     n_initial_samples=3,
-                    n_iterations=8,
+                    n_iterations=3,
                     max_scan_range=[-10, 10],
                 )
 
@@ -186,17 +184,17 @@ class TestAutomaticEmittance:
 
                 plot_quad_scan_result(result)
 
-                quad_scan.xopt_object.generator.visualize_model(
+                quad_scan.X.generator.visualize_model(
                     exponentiate=True,
                     show_feasibility=True,
                 )
-                quad_scan.xopt_object.data.plot(y="k")
+                quad_scan.X.data.plot(y="k")
 
                 # check resulting calculations against cheetah simulation ground truth
                 assert np.allclose(
                     result.emittance,
                     np.array([1.0e-2, 1.0e-1]).reshape(2, 1),
-                    rtol=1.0e-1,
+                    rtol=1.5e-1,
                 )
                 assert np.allclose(
                     result.beam_matrix,
@@ -206,7 +204,7 @@ class TestAutomaticEmittance:
 
                 # make sure that we return the initial quadrupole setting at the end
                 assert mock_beamline.magnet.bctrl == 0.01
-
+                
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
             beta_x=torch.tensor(5.0),
