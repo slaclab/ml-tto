@@ -47,13 +47,13 @@ def evaluate_concavity(
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll)
 
-    # define function to compute second derivative of the model output
-    def gp_mean(quad_values):
-        return model.posterior(quad_values.reshape(-1, 1)).mean.sum()
+    # define functions to compute second derivative of model output w.r.t. x
+    def post_mean_sum(x_values):
+        return model.posterior(x_values.reshape(-1,1)).mean.sum()
 
-    def modeled_second_deriv(quad_values):
+    def modeled_second_deriv(x_values):
         return torch.diag(
-        torch.autograd.functional.hessian(gp_mean, quad_values.flatten())
+        torch.autograd.functional.hessian(post_mean_sum, x_values.flatten())
         )
 
     # evaluate the concavity of the GP fit at the training data points
@@ -186,7 +186,7 @@ def crop_scan(
             zorder=3,
         )
         plt.legend()
-        plt.ylabel("Beam size^2 (m^2)")
+        plt.ylabel("$Beam size^2 (m^2)$")
         plt.xlabel("Quad value (machine units)")
         plt.title("Inflection point crop")
         plt.tight_layout()
