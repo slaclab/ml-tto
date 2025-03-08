@@ -1,4 +1,4 @@
-from ml_tto.automatic_emittance.scan_cropping import crop_scans
+from ml_tto.automatic_emittance.scan_cropping import crop_scan
 import numpy as np
 
 
@@ -47,7 +47,7 @@ class TestScanCropping:
             ]
         )
 
-        x_cropped, y_cropped = crop_scans(x, y)
+        x_cropped, y_cropped = crop_scan(x, y)
 
         assert np.allclose(
             x_cropped,
@@ -137,7 +137,7 @@ class TestScanCropping:
             ]
         )
 
-        x_cropped, y_cropped = crop_scans(x, y, cutoff_max=10)
+        x_cropped, y_cropped = crop_scan(x, y, cutoff_max=10)
 
         assert np.allclose(
             x_cropped,

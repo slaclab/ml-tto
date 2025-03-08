@@ -47,30 +47,32 @@ def evaluate_concavity(
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll)
 
-    # evaluate the concavity of the GP fit at the training data points
+    # define function to compute second derivative of the model output
     def gp_mean(quad_values):
         return model.posterior(quad_values.reshape(-1, 1)).mean.sum()
 
-    hess_data = torch.diag(
-        torch.autograd.functional.hessian(gp_mean, train_X.flatten())
-    )
-    data_concavity = hess_data > 0
+    def modeled_second_deriv(quad_values):
+        return torch.diag(
+        torch.autograd.functional.hessian(gp_mean, quad_values.flatten())
+        )
+
+    # evaluate the concavity of the GP fit at the training data points
+    d2_data = modeled_second_deriv(train_X)
+    data_concavity = d2_data > 0
     data_concavity = data_concavity.detach().numpy()
 
     # evaluate the GP fit and its concavity on a linspace
     fit_x = torch.linspace(x.min(), x.max(), 100).reshape(-1, 1)
     fit_y = model.posterior(fit_x).mean.detach().numpy().flatten()
-    hess_fit = torch.diag(
-        torch.autograd.functional.hessian(gp_mean, fit_x.flatten())
-    )
-    fit_concavity = hess_fit > 0
+    d2_fit = modeled_second_deriv(fit_x)
+    fit_concavity = d2_fit > 0
     fit_concavity = fit_concavity.detach().numpy()
     fit_x = fit_x.detach().numpy().flatten()
 
     return data_concavity, fit_x, fit_y, fit_concavity
 
 
-def crop_scans(
+def crop_scan(
     scan_values: np.ndarray,
     beam_sizes: np.ndarray,
     cutoff_max: Optional[float] = None,
@@ -166,8 +168,8 @@ def crop_scans(
         )
         # plot the data that has been removed by the concavity condition
         plt.scatter(
-            scan_values[~cutoff_mask * ~data_concavity],
-            beam_sizes[~cutoff_mask * ~data_concavity] ** 2,
+            scan_values[~cutoff_mask * concavity_mask],
+            beam_sizes[~cutoff_mask * concavity_mask] ** 2,
             s=50,
             facecolors="none",
             edgecolors="C0",
