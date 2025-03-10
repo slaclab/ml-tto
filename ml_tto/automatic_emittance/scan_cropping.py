@@ -10,68 +10,6 @@ import torch
 from gpytorch import ExactMarginalLogLikelihood
 
 
-def evaluate_concavity(
-    x: np.ndarray, y: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Identifies which points in the data are in regions of upward concavity
-    using posterior mean of GP fit to the data.
-
-    NOTE: y must not contain NaNs
-
-    Inputs:
-        x: 1d numpy array containing scan inputs
-        y: numpy array (same shape as x) containing corresponding scan outputs
-    Outputs:
-        data_concavity: truth table specifying which points in the input data
-                        are in a region of upward concavity according to
-                        posterior mean of GP fit to the data
-        fit_x: linspace over which the GP posterior mean has been evaluated
-        fit_y: GP posterior mean evaluated on the linspace fit_x
-        fit_concavity: truth table specifying which points in fit_x/fit_y are
-                        in a region of upward concavity according to GP
-                        posterior mean
-    """
-
-    # fit a 1d GP model to the scan data
-    train_X = torch.from_numpy(x).reshape(-1, 1)
-    train_Y = torch.from_numpy(y).reshape(-1, 1)
-    outcome_transform = Standardize(m=1)
-    input_transform = Normalize(d=1)
-    model = SingleTaskGP(
-        train_X,
-        train_Y,
-        outcome_transform=outcome_transform,
-        input_transform=input_transform,
-    )
-    mll = ExactMarginalLogLikelihood(model.likelihood, model)
-    fit_gpytorch_mll(mll)
-
-    # define functions to compute second derivative of model output w.r.t. x
-    def post_mean_sum(x_values):
-        return model.posterior(x_values.reshape(-1,1)).mean.sum()
-
-    def modeled_second_deriv(x_values):
-        return torch.diag(
-        torch.autograd.functional.hessian(post_mean_sum, x_values.flatten())
-        )
-
-    # evaluate the concavity of the GP fit at the training data points
-    d2_data = modeled_second_deriv(train_X)
-    data_concavity = d2_data > 0
-    data_concavity = data_concavity.detach().numpy()
-
-    # evaluate the GP fit and its concavity on a linspace
-    fit_x = torch.linspace(x.min(), x.max(), 100).reshape(-1, 1)
-    fit_y = model.posterior(fit_x).mean.detach().numpy().flatten()
-    d2_fit = modeled_second_deriv(fit_x)
-    fit_concavity = d2_fit > 0
-    fit_concavity = fit_concavity.detach().numpy()
-    fit_x = fit_x.detach().numpy().flatten()
-
-    return data_concavity, fit_x, fit_y, fit_concavity
-
-
 def crop_scan(
     scan_values: np.ndarray,
     beam_sizes: np.ndarray,
@@ -105,12 +43,14 @@ def crop_scan(
     scan_values_cropped = np.copy(scan_values)
     beam_sizes_cropped = np.copy(beam_sizes)
 
-    # identify data points where GP fit to data is concave up
-    data_concavity, fit_x, fit_y, fit_concavity = evaluate_concavity(
-        scan_values_cropped, beam_sizes_cropped**2
-    )
+    # fit 1d gp model to data
+    model = fit_1d_gp_model(scan_values, beam_sizes**2)
+
+    # identify which scan points are in regions of model upwards concavity
+    data_is_concave_up = posterior_mean_concavity(model, scan_values)
+
     # set beam size data to nan where concavity is not upward
-    concavity_mask = ~data_concavity
+    concavity_mask = ~data_is_concave_up
     beam_sizes_cropped[concavity_mask] = np.nan
 
     # set beam size data to nan where the beam size is larger than some amount
@@ -126,6 +66,14 @@ def crop_scan(
     beam_sizes_cropped = beam_sizes_cropped[~np.isnan(beam_sizes_cropped)]
 
     if visualize:
+        # evaluate the GP fit and its concavity on a linspace
+        fit_x = torch.linspace(
+            scan_values.min(), scan_values.max(), 100
+        ).reshape(-1, 1)
+        fit_y = model.posterior(fit_x).mean.detach().numpy().flatten()
+        fit_x = fit_x.detach().numpy().flatten()
+        fit_is_concave_up = posterior_mean_concavity(model, fit_x)
+
         plt.figure()
         if cutoff_max is not None:
             # plot the beam size cutoff_max boundary
@@ -136,8 +84,8 @@ def crop_scan(
                 label="cutoff",
                 zorder=2,
             )
-        fit_y_up = np.ma.masked_array(fit_y, mask=~fit_concavity)
-        fit_y_down = np.ma.masked_array(fit_y, mask=fit_concavity)
+        fit_y_up = np.ma.masked_array(fit_y, mask=~fit_is_concave_up)
+        fit_y_down = np.ma.masked_array(fit_y, mask=fit_is_concave_up)
         # plot the GP posterior mean where the concavity it upward
         plt.plot(
             fit_x,
@@ -192,3 +140,81 @@ def crop_scan(
         plt.tight_layout()
 
     return scan_values_cropped, beam_sizes_cropped
+
+
+def fit_1d_gp_model(
+    x: np.ndarray, y: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Fits 1d GP regression model to 1d training data.
+
+    NOTE: y must not contain NaNs
+
+    Inputs:
+        x: 1d numpy array containing training inputs
+        y: 1d numpy array containing corresponding training outputs
+    Outputs:
+        model: gpytorch gp model fit to 1d training data (x, y)
+    """
+
+    # fit a 1d GP model to the scan data
+    train_X = torch.from_numpy(x).reshape(-1, 1)
+    train_Y = torch.from_numpy(y).reshape(-1, 1)
+    outcome_transform = Standardize(m=1)
+    input_transform = Normalize(d=1)
+    model = SingleTaskGP(
+        train_X,
+        train_Y,
+        outcome_transform=outcome_transform,
+        input_transform=input_transform,
+    )
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    fit_gpytorch_mll(mll)
+
+    return model
+
+
+def posterior_mean_second_derivative(model, x_values):
+    """
+    Evaluate the second derivative of the model (GP) posterior mean
+    at the given x-values with respect to x.
+
+    Inputs:
+        model: Gpytorch GP regression model trained on 1d data
+        x_values: 1d torch tensor specifying the inputs at which
+                    to evaluate second derivative
+    Outputs:
+        d2y_dx2: 1d torch tensor containing second derivates of GP
+                posterior mean at the given x-values
+    """
+
+    def posterior_mean_sum(x_values):
+        return model.posterior(x_values.reshape(-1, 1)).mean.sum()
+
+    d2y_dx2 = torch.diag(
+        torch.autograd.functional.hessian(posterior_mean_sum, x_values)
+    )
+
+    return d2y_dx2
+
+
+def posterior_mean_concavity(model, x_values):
+    """
+    Evaluate the concavity of the model (GP) posterior mean
+    at the given x-values.
+
+    Inputs:
+        model: Gpytorch GP regression model trained on 1d data
+        x_values: 1d numpy array specifying the inputs at which
+                    to evaluate second derivative
+    Outputs:
+        is_concave_up: 1d numpy array truth-table specifying which
+                        x-values are in regions of model upwards concavity
+    """
+
+    x_values = torch.from_numpy(x_values)
+    d2y_dx2 = posterior_mean_second_derivative(model, x_values)
+    is_concave_up = d2y_dx2 > 0
+    is_concave_up = is_concave_up.detach().numpy()
+
+    return is_concave_up
