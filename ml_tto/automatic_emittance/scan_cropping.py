@@ -142,9 +142,7 @@ def crop_scan(
     return scan_values_cropped, beam_sizes_cropped
 
 
-def fit_1d_gp_model(
-    x: np.ndarray, y: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def fit_1d_gp_model(x: np.ndarray, y: np.ndarray) -> SingleTaskGP:
     """
     Fits 1d GP regression model to 1d training data.
 
@@ -174,13 +172,15 @@ def fit_1d_gp_model(
     return model
 
 
-def posterior_mean_second_derivative(model, x_values):
+def posterior_mean_second_derivative(
+    model: SingleTaskGP, x_values: torch.tensor
+) -> torch.tensor:
     """
     Evaluate the second derivative of the model (GP) posterior mean
     at the given x-values with respect to x.
 
     Inputs:
-        model: Gpytorch GP regression model trained on 1d data
+        model: SingleTaskGP regression model trained on 1d data
         x_values: 1d torch tensor specifying the inputs at which
                     to evaluate second derivative
     Outputs:
@@ -198,7 +198,9 @@ def posterior_mean_second_derivative(model, x_values):
     return d2y_dx2
 
 
-def posterior_mean_concavity(model, x_values):
+def posterior_mean_concavity(
+    model: SingleTaskGP, x_values: np.ndarray
+) -> np.ndarray:
     """
     Evaluate the concavity of the model (GP) posterior mean
     at the given x-values.
@@ -208,8 +210,8 @@ def posterior_mean_concavity(model, x_values):
         x_values: 1d numpy array specifying the inputs at which
                     to evaluate second derivative
     Outputs:
-        is_concave_up: 1d numpy array truth-table specifying which
-                        x-values are in regions of model upwards concavity
+        is_concave_up: 1d numpy boolean array specifying which x-values
+                        are in regions of model upwards concavity
     """
 
     x_values = torch.from_numpy(x_values)
