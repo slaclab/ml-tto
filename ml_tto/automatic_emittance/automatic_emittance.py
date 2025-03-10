@@ -18,7 +18,10 @@ from pydantic import PositiveInt, field_validator
 import time
 
 from ml_tto.automatic_emittance.utils import compute_emit_bmag_machine_units
-from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement
+from ml_tto.automatic_emittance.screen_profile import (
+    ScreenBeamProfileMeasurement,
+)
+from ml_tto.automatic_emittance.scan_cropping import crop_scan
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -34,6 +37,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
     visualize_bo: bool = False
+    visualize_cropping: bool = False
     verbose: bool = False
 
     @field_validator("beamsize_measurement", mode="after")
@@ -99,7 +103,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
         generator = UpperConfidenceBoundGenerator(
             vocs=vocs,
             beta=self.beta,
-            numerical_optimizer=GridOptimizer(n_grid_points=self.n_grid_points),
+            numerical_optimizer=GridOptimizer(
+                n_grid_points=self.n_grid_points
+            ),
             n_interpolate_points=self.n_interpolate_points,
             n_monte_carlo_samples=64,
         )
@@ -203,8 +209,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
         if self.design_twiss:
             twiss_betas_alphas = np.array(
                 [
-                    [self.design_twiss["beta_x"], self.design_twiss["alpha_x"]],
-                    [self.design_twiss["beta_y"], self.design_twiss["alpha_y"]],
+                    [
+                        self.design_twiss["beta_x"],
+                        self.design_twiss["alpha_x"],
+                    ],
+                    [
+                        self.design_twiss["beta_y"],
+                        self.design_twiss["alpha_y"],
+                    ],
                 ]
             )
         else:
@@ -216,9 +228,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
             "q_len": magnet_length,
             "rmat": self.rmat,
             "energy": self.energy,
-            "twiss_design": twiss_betas_alphas
-            if twiss_betas_alphas is not None
-            else None,
+            "twiss_design": (
+                twiss_betas_alphas if twiss_betas_alphas is not None else None
+            ),
         }
 
         # Call wrapper that takes quads in machine units and beamsize in meters
@@ -246,14 +258,20 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         beam_sizes = np.array(beam_sizes).T
 
+        scan_values_cropped = []
+        beam_sizes_cropped = []
         for i in range(2):
-            min_observed_size = np.nanmin(beam_sizes[i])
+            # crop the scans using concavity filter and max beam size filter
+            sv_cropped, bs_cropped = crop_scan(
+                scan_values=scan_values[i],
+                beam_sizes=beam_sizes[i],
+                cutoff_max=self.beamsize_cutoff_max,
+                visualize=self.visualize_cropping,
+            )
+            scan_values_cropped += [sv_cropped]
+            beam_sizes_cropped += [bs_cropped]
 
-            # cut out any indicies where the beam size is larger than some amount
-            mask = beam_sizes[i] > self.beamsize_cutoff_max * min_observed_size
-            beam_sizes[i][mask] = np.nan
-
-        return scan_values, beam_sizes
+        return scan_values_cropped, beam_sizes_cropped
 
     def get_vocs(self, dim_name):
         """utility function to create x/y vocs"""
@@ -267,13 +285,18 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         if self.X is not None:
             if self.X.data is not None:
-                min_size = np.nanmin(self.X.data[scan_name].to_numpy(dtype="float"))
+                min_size = np.nanmin(
+                    self.X.data[scan_name].to_numpy(dtype="float")
+                )
                 vocs.constraints = {
                     "min_signal_to_noise_ratio": [
                         "GREATER_THAN",
                         self.min_signal_to_noise_ratio,
                     ],
-                    "scaled_x_rms_px": ["LESS_THAN", self.beamsize_cutoff_max * min_size],
+                    "scaled_x_rms_px": [
+                        "LESS_THAN",
+                        self.beamsize_cutoff_max * min_size,
+                    ],
                 }
 
         return vocs
