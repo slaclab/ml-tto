@@ -152,7 +152,7 @@ def fit_1d_gp_model(x: np.ndarray, y: np.ndarray) -> SingleTaskGP:
         x: 1d numpy array containing training inputs
         y: 1d numpy array containing corresponding training outputs
     Outputs:
-        model: gpytorch gp model fit to 1d training data (x, y)
+        model: SingleTaskGP regression model fit to 1d training data (x, y)
     """
 
     # fit a 1d GP model to the scan data
@@ -206,7 +206,7 @@ def posterior_mean_concavity(
     at the given x-values.
 
     Inputs:
-        model: Gpytorch GP regression model trained on 1d data
+        model: SingleTaskGP regression model trained on 1d data
         x_values: 1d numpy array specifying the inputs at which
                     to evaluate second derivative
     Outputs:
