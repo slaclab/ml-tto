@@ -208,7 +208,7 @@ def posterior_mean_concavity(
     Inputs:
         model: SingleTaskGP regression model trained on 1d data
         x_values: 1d numpy array specifying the inputs at which
-                    to evaluate second derivative
+                    to evaluate concavity of model posterior mean
     Outputs:
         is_concave_up: 1d numpy boolean array specifying which x-values
                         are in regions of model upwards concavity
