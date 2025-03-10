@@ -104,23 +104,14 @@ def crop_scan(
             label="concave down",
             zorder=1,
         )
-        # plot the data that has been removed by the cutoff_max condition
+        # plot the data that has been removed
         plt.scatter(
-            scan_values[cutoff_mask],
-            beam_sizes[cutoff_mask] ** 2,
+            scan_values[cutoff_mask + concavity_mask],
+            beam_sizes[cutoff_mask + concavity_mask] ** 2,
             s=50,
             facecolors="none",
             edgecolors="C0",
             label="data removed",
-            zorder=3,
-        )
-        # plot the data that has been removed by the concavity condition
-        plt.scatter(
-            scan_values[~cutoff_mask * concavity_mask],
-            beam_sizes[~cutoff_mask * concavity_mask] ** 2,
-            s=50,
-            facecolors="none",
-            edgecolors="C0",
             zorder=3,
         )
         # plot the data that has remains after cropping
