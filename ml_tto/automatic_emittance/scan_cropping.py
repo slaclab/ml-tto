@@ -17,11 +17,11 @@ def crop_scan(
     visualize: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Replaces beam_sizes greater than
-    cutoff_max * minimum observed beam_size with nan.
-    Finds regions of upward concavity in remaining data using
-    1d GP regression (posterior mean) and replaces beam_sizes
-    outside of these regions with nan.
+    Finds regions of upward concavity in data using
+    1d GP regression (posterior mean) and removes points
+    outside of these regions from scan data.
+    Also removes points where beam size is greater than
+    (cutoff_max * minimum observed beam_size) from scan data.
     Plots cropping results if specified.
 
     Inputs:
