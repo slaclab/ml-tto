@@ -127,7 +127,7 @@ def crop_scan(
         plt.legend()
         plt.ylabel("$Beam size^2 (m^2)$")
         plt.xlabel("Quad value (machine units)")
-        plt.title("Inflection point crop")
+        plt.title("Scan Cropping Results")
         plt.tight_layout()
 
     return scan_values_cropped, beam_sizes_cropped
