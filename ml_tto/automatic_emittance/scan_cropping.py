@@ -73,6 +73,8 @@ def crop_scan(
         fit_y = model.posterior(fit_x).mean.detach().numpy().flatten()
         fit_x = fit_x.detach().numpy().flatten()
         fit_is_concave_up = posterior_mean_concavity(model, fit_x)
+        fit_y_up = np.ma.masked_array(fit_y, mask=~fit_is_concave_up)
+        fit_y_down = np.ma.masked_array(fit_y, mask=fit_is_concave_up)
 
         plt.figure()
         if cutoff_max is not None:
@@ -84,8 +86,6 @@ def crop_scan(
                 label="cutoff",
                 zorder=2,
             )
-        fit_y_up = np.ma.masked_array(fit_y, mask=~fit_is_concave_up)
-        fit_y_down = np.ma.masked_array(fit_y, mask=fit_is_concave_up)
         # plot the GP posterior mean where the concavity it upward
         plt.plot(
             fit_x,
