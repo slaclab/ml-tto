@@ -33,8 +33,8 @@ def crop_scan(
                     (Upper limit = cutoff_max * minimum beam_size)
         visualize: boolean specifying whether to plot cropping results
     Outputs:
-        scan_values: Cropped scan_values
-        beam_sizes: Cropped beam_sizes
+        scan_values_cropped: 1d numpy array of cropped scan_values
+        beam_sizes_cropped: 1d numpy array of cropped beam_sizes
     """
 
     # remove nans and copy input data before making edits
