@@ -14,7 +14,7 @@ from lcls_tools.common.data.emittance import compute_emit_bmag
 from lcls_tools.common.data.model_general_calcs import bdes_to_kmod, get_optics
 from typing import Optional, Tuple
 
-from pydantic import PositiveInt, field_validator
+from pydantic import PositiveInt, SerializeAsAny, field_validator
 import time
 
 from ml_tto.automatic_emittance.utils import compute_emit_bmag_machine_units
@@ -26,6 +26,7 @@ from ml_tto.automatic_emittance.scan_cropping import crop_scan
 
 class MLQuadScanEmittance(QuadScanEmittance):
     scan_values: Optional[list[float]] = []
+    beamsize_measurement: SerializeAsAny[ScreenBeamProfileMeasurement]
     n_initial_samples: PositiveInt = 3
     n_iterations: PositiveInt = 5
     max_scan_range: Optional[list[float]] = [-10.0, 10.0]
@@ -57,6 +58,24 @@ class MLQuadScanEmittance(QuadScanEmittance):
         #    )
         # return v
 
+    def measure(self):
+        """
+        Conduct quadrupole scan to measure the beam phase space.
+
+        Returns:
+        -------
+        result : EmittanceMeasurementResult
+            Object containing the results of the emittance measurement
+        """
+
+        # reset the scan values and info
+        self.reset()
+
+        # scan magnet strength and measure beamsize
+        self.perform_beamsize_measurements()
+
+        return self.calculate_emittance()
+
     def _evaluate(self, inputs):
         # set quadrupole strength
         if self.verbose:
@@ -87,8 +106,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         rms_y = validated_result.rms_sizes[:, 1] / 100
 
         results = {
-            "scaled_x_rms_px": rms_x,
-            "scaled_y_rms_px": rms_y,
+            "scaled_x_rms_px_sq": rms_x**2,
+            "scaled_y_rms_px_sq": rms_y**2,
             "min_signal_to_noise_ratio": np.min(
                 validated_result.signal_to_noise_ratios
             ),
@@ -160,25 +179,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # reset quadrupole strength to original value
         self.magnet.bctrl = current_k
 
-    def measure(self):
-        """
-        Conduct quadrupole scan to measure the beam phase space.
-
-        Returns:
-        -------
-        result : EmittanceMeasurementResult
-            Object containing the results of the emittance measurement
-        """
-
-        # reset the scan values and info
-        self.reset()
-
-        # scan magnet strength and measure beamsize
-        self.perform_beamsize_measurements()
-
-        return self.fit_scan()
-
-    def fit_scan(self):
+    def calculate_emittance(self):
         """
         Run the emittance fit using the measured beam sizes and quadrupole strengths.
         """
@@ -276,11 +277,11 @@ class MLQuadScanEmittance(QuadScanEmittance):
     def get_vocs(self, dim_name):
         """utility function to create x/y vocs"""
 
-        scan_name = f"scaled_{dim_name}_rms_px"
+        scan_name = f"scaled_{dim_name}_rms_px_sq"
         vocs = VOCS(
             variables={"k": self.max_scan_range},
             objectives={scan_name: "MINIMIZE"},
-            observables=["scaled_x_rms_px", "scaled_y_rms_px"],
+            observables=["scaled_x_rms_px_sq", "scaled_y_rms_px_sq"],
         )
 
         if self.X is not None:
@@ -293,10 +294,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
                         "GREATER_THAN",
                         self.min_signal_to_noise_ratio,
                     ],
-                    "scaled_x_rms_px": [
-                        "LESS_THAN",
-                        self.beamsize_cutoff_max * min_size,
-                    ],
+                    scan_name: ["LESS_THAN", self.beamsize_cutoff_max**2 * min_size],
                 }
 
         return vocs
