@@ -35,6 +35,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     min_signal_to_noise_ratio: float = 4.0
     n_interpolate_points: Optional[PositiveInt] = 3
     n_grid_points: PositiveInt = 100
+    min_beamsize_cutoff: float = 100.0 # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
     visualize_bo: bool = False
@@ -102,12 +103,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self._info[-1] = validated_result
 
         # collect results
-        rms_x = validated_result.rms_sizes[:, 0] / 100
-        rms_y = validated_result.rms_sizes[:, 1] / 100
+        rms_x = validated_result.rms_sizes[:, 0]
+        rms_y = validated_result.rms_sizes[:, 1]
 
         results = {
-            "scaled_x_rms_px_sq": rms_x**2,
-            "scaled_y_rms_px_sq": rms_y**2,
+            "x_rms_px_sq": rms_x**2,
+            "y_rms_px_sq": rms_y**2,
             "min_signal_to_noise_ratio": np.min(
                 validated_result.signal_to_noise_ratios
             ),
@@ -261,12 +262,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         scan_values_cropped = []
         beam_sizes_cropped = []
+        dim_names = ["x", "y"]
         for i in range(2):
             # crop the scans using concavity filter and max beam size filter
+            cutoff_size = self._get_cutoff_beamsize(dim_names[i]) * self.beamsize_measurement.device.resolution * 1e-6
             sv_cropped, bs_cropped = crop_scan(
                 scan_values=scan_values[i],
                 beam_sizes=beam_sizes[i],
-                cutoff_max=self.beamsize_cutoff_max,
+                cutoff_max=cutoff_size,
                 visualize=self.visualize_cropping,
             )
             scan_values_cropped += [sv_cropped]
@@ -277,24 +280,36 @@ class MLQuadScanEmittance(QuadScanEmittance):
     def get_vocs(self, dim_name):
         """utility function to create x/y vocs"""
 
-        scan_name = f"scaled_{dim_name}_rms_px_sq"
+        scan_name = f"{dim_name}_rms_px_sq"
         vocs = VOCS(
             variables={"k": self.max_scan_range},
             objectives={scan_name: "MINIMIZE"},
-            observables=["scaled_x_rms_px_sq", "scaled_y_rms_px_sq"],
+            observables=["x_rms_px_sq", "y_rms_px_sq"],
         )
 
         if self.X is not None:
             if self.X.data is not None:
-                min_size = np.nanmin(
-                    self.X.data[scan_name].to_numpy(dtype="float")
-                )
                 vocs.constraints = {
                     "min_signal_to_noise_ratio": [
                         "GREATER_THAN",
                         self.min_signal_to_noise_ratio,
                     ],
-                    scan_name: ["LESS_THAN", self.beamsize_cutoff_max**2 * min_size],
+                    scan_name: [
+                        "LESS_THAN", (self._get_cutoff_beamsize(dim_name))**2
+                    ],
                 }
 
         return vocs
+    
+    def _get_cutoff_beamsize(self, dim_name):
+        """
+        return the cutoff beam size for the given dimension, returned in pixel scale
+        """
+        param_name = f"{dim_name}_rms_px_sq"
+        min_size = np.nanmin(
+            self.X.data[param_name].to_numpy(dtype="float")
+        )
+        return np.max((
+            self.beamsize_cutoff_max * np.sqrt(min_size), 
+            self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution
+        ))

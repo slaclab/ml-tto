@@ -21,16 +21,14 @@ def crop_scan(
     1d GP regression (posterior mean) and removes points
     outside of these regions from scan data.
     Also removes points where beam size is greater than
-    (cutoff_max * minimum observed beam_size) from scan data.
+    (cutoff_max) from scan data.
     Plots cropping results if specified.
 
     Inputs:
         scan_values: 1d numpy array of scan input values
-        beam_sizes: 1d numpy array of scan output values
-                    (same length as scan_values)
+        beam_sizes: 1d numpy array of beam size values in [m]
         cutoff_max: float specifying upper limit at which to crop
-                    beam_sizes.
-                    (Upper limit = cutoff_max * minimum beam_size)
+                    beam_sizes in [m]
         visualize: boolean specifying whether to plot cropping results
     Outputs:
         scan_values_cropped: 1d numpy array of cropped scan_values
@@ -55,8 +53,7 @@ def crop_scan(
 
     # set beam size data to nan where the beam size is larger than some amount
     if cutoff_max is not None:
-        min_observed_size = np.nanmin(beam_sizes)
-        cutoff_mask = beam_sizes_cropped > cutoff_max * min_observed_size
+        cutoff_mask = beam_sizes_cropped > cutoff_max
     else:
         cutoff_mask = np.zeros(len(beam_sizes_cropped), dtype=bool)
     beam_sizes_cropped[cutoff_mask] = np.nan
@@ -80,7 +77,7 @@ def crop_scan(
         if cutoff_max is not None:
             # plot the beam size cutoff_max boundary
             plt.axhline(
-                (cutoff_max * min_observed_size) ** 2,
+                cutoff_max ** 2,
                 ls=":",
                 c="k",
                 label="cutoff",
@@ -190,7 +187,7 @@ def posterior_mean_second_derivative(
 
 
 def posterior_mean_concavity(
-    model: SingleTaskGP, x_values: np.ndarray
+    model: SingleTaskGP, x_values: np.ndarray, visualize: bool = False
 ) -> np.ndarray:
     """
     Evaluate the concavity of the model (GP) posterior mean
@@ -207,6 +204,13 @@ def posterior_mean_concavity(
 
     x_values = torch.from_numpy(x_values)
     d2y_dx2 = posterior_mean_second_derivative(model, x_values)
+
+    #fig,ax = plt.subplots()
+    #ax.plot(x_values, d2y_dx2)
+    #ax.axhline(0, ls="--", c="k")
+    #ax.set_ylabel("Second Derivative")
+    #ax.set_xlabel("Quad value (machine units)")
+
     is_concave_up = d2y_dx2 > 0
     is_concave_up = is_concave_up.detach().numpy()
 

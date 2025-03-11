@@ -77,7 +77,7 @@ ml_gaussian_parameters = ModelParameters(
     parameters={
         "mean": Parameter(bounds=[0.01, 1.0]),
         "sigma": Parameter(bounds=[1e-8, 5.0]),
-        "amplitude": Parameter(bounds=[0.5, 1.0]),
+        "amplitude": Parameter(bounds=[0.01, 1.0]),
         "offset": Parameter(bounds=[0.01, 1.0]),
     },
 )
@@ -255,7 +255,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         """
         initial_fit = ImageProjectionFit(signal_to_noise_threshold=0.01)
-        fresult = initial_fit.fit_image(scipy.ndimage.maximum_filter(image, size=10))
+        fresult = initial_fit.fit_image(scipy.ndimage.median_filter(image, size=10))
 
         if self.visualize_fit:
             plot_image_projection_fit(fresult)
