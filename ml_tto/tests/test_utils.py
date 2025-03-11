@@ -31,7 +31,8 @@ class TestUtils:
             validate_beamsize_measurement_result(
                 mock_result,
                 roi=mock_result.metadata.image_processor.roi,
-                min_log10_intensity=3.0, n_stds=n_stds
+                min_log10_intensity=3.0,
+                n_stds=n_stds,
             )
         )
 
@@ -39,9 +40,13 @@ class TestUtils:
         # note that the last bb_penalty is NaN because the total intensity is below the threshold
         assert np.allclose(
             bb_penalties[:2],
-            np.array([np.linalg.norm(
-                np.ones(2)*radius - (n_stds*size + centroid)
-                ) - radius for centroid, size in zip(centroids[:2], rms_sizes[:2])])
+            np.array(
+                [
+                    np.linalg.norm(np.ones(2) * radius - (n_stds * size + centroid))
+                    - radius
+                    for centroid, size in zip(centroids[:2], rms_sizes[:2])
+                ]
+            ),
         )
         assert np.isnan(bb_penalties[2])
 
@@ -87,16 +92,16 @@ class TestUtils:
         assert penalty == np.linalg.norm(roi.center - np.array((3.0, 5.0))) - 1.0
 
         # test with a rectangular ROI
-        roi = ROI(center=[1,1], extent=[1, 1])
+        roi = ROI(center=[1, 1], extent=[1, 1])
         penalty = calculate_bounding_box_penalty(roi, bbox_coords)
         assert penalty == 4.0
 
         bbox_coords = np.array(
             [
-                np.array([0., 0.]),
-                np.array([1., 1.]),
-                np.array([0., 1.0]),
-                np.array([1.0, 0.]),
+                np.array([0.0, 0.0]),
+                np.array([1.0, 1.0]),
+                np.array([0.0, 1.0]),
+                np.array([1.0, 0.0]),
             ]
         )
         assert calculate_bounding_box_penalty(roi, bbox_coords) == 0.0
@@ -110,4 +115,3 @@ class TestUtils:
             ]
         )
         assert calculate_bounding_box_penalty(roi, bbox_coords) == -0.25
-

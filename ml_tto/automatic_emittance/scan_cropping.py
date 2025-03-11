@@ -64,9 +64,7 @@ def crop_scan(
 
     if visualize:
         # evaluate the GP fit and its concavity on a linspace
-        fit_x = torch.linspace(
-            scan_values.min(), scan_values.max(), 100
-        ).reshape(-1, 1)
+        fit_x = torch.linspace(scan_values.min(), scan_values.max(), 100).reshape(-1, 1)
         fit_y = model.posterior(fit_x).mean.detach().numpy().flatten()
         fit_x = fit_x.detach().numpy().flatten()
         fit_is_concave_up = posterior_mean_concavity(model, fit_x)
@@ -77,7 +75,7 @@ def crop_scan(
         if cutoff_max is not None:
             # plot the beam size cutoff_max boundary
             plt.axhline(
-                cutoff_max ** 2,
+                cutoff_max**2,
                 ls=":",
                 c="k",
                 label="cutoff",
@@ -205,11 +203,11 @@ def posterior_mean_concavity(
     x_values = torch.from_numpy(x_values)
     d2y_dx2 = posterior_mean_second_derivative(model, x_values)
 
-    #fig,ax = plt.subplots()
-    #ax.plot(x_values, d2y_dx2)
-    #ax.axhline(0, ls="--", c="k")
-    #ax.set_ylabel("Second Derivative")
-    #ax.set_xlabel("Quad value (machine units)")
+    # fig,ax = plt.subplots()
+    # ax.plot(x_values, d2y_dx2)
+    # ax.axhline(0, ls="--", c="k")
+    # ax.set_ylabel("Second Derivative")
+    # ax.set_xlabel("Quad value (machine units)")
 
     is_concave_up = d2y_dx2 > 0
     is_concave_up = is_concave_up.detach().numpy()

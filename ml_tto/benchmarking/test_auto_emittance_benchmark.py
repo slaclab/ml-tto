@@ -14,7 +14,10 @@ from lcls_tools.common.image.processing import ImageProcessor
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
-from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement, ScreenBeamProfileMeasurementResult
+from ml_tto.automatic_emittance.screen_profile import (
+    ScreenBeamProfileMeasurement,
+    ScreenBeamProfileMeasurementResult,
+)
 
 
 class MockBeamline:
@@ -91,7 +94,6 @@ class MockBeamline:
         return result
 
 
-
 def run_calc():
     rmat = np.array([[[1, 1.0], [0, 1]], [[1, 1.0], [0, 1]]])
 
@@ -131,13 +133,17 @@ def run_calc():
     # check the reconstructed beam matrix parameters
     assert np.allclose(
         result.beam_matrix[0],
-        np.array([
-            initial_beam._cov[0,0,0].numpy(),
-            initial_beam._cov[0,0,1].numpy(),
-            initial_beam._cov[0,1,1].numpy()
-        ]) * 1e6,
+        np.array(
+            [
+                initial_beam._cov[0, 0, 0].numpy(),
+                initial_beam._cov[0, 0, 1].numpy(),
+                initial_beam._cov[0, 1, 1].numpy(),
+            ]
+        )
+        * 1e6,
         rtol=1.0e-1,
     )
+
 
 @pytest.mark.benchmark(max_time=30.0)
 def test_robustness(benchmark):

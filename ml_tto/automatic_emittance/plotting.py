@@ -40,7 +40,9 @@ def plot_image_projection_fit(result: ImageProjectionFitResult, n_stds: float = 
         fit_params = copy(result.projection_fit_parameters[i])
         fit_params.update({"stnr": result.signal_to_noise_ratio[i]})
 
-        text_info = "\n".join([f"{name}: {val:.2f}" for name, val in fit_params.items()])
+        text_info = "\n".join(
+            [f"{name}: {val:.2f}" for name, val in fit_params.items()]
+        )
         text_info += (
             "\n" + "extent " + ",".join([f"{ele:.2f}" for ele in result.beam_extent[i]])
         )

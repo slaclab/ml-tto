@@ -35,7 +35,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     min_signal_to_noise_ratio: float = 4.0
     n_interpolate_points: Optional[PositiveInt] = 3
     n_grid_points: PositiveInt = 100
-    min_beamsize_cutoff: float = 100.0 # in microns
+    min_beamsize_cutoff: float = 100.0  # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
     visualize_bo: bool = False
@@ -123,9 +123,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         generator = UpperConfidenceBoundGenerator(
             vocs=vocs,
             beta=self.beta,
-            numerical_optimizer=GridOptimizer(
-                n_grid_points=self.n_grid_points
-            ),
+            numerical_optimizer=GridOptimizer(n_grid_points=self.n_grid_points),
             n_interpolate_points=self.n_interpolate_points,
             n_monte_carlo_samples=64,
         )
@@ -265,7 +263,11 @@ class MLQuadScanEmittance(QuadScanEmittance):
         dim_names = ["x", "y"]
         for i in range(2):
             # crop the scans using concavity filter and max beam size filter
-            cutoff_size = self._get_cutoff_beamsize(dim_names[i]) * self.beamsize_measurement.device.resolution * 1e-6
+            cutoff_size = (
+                self._get_cutoff_beamsize(dim_names[i])
+                * self.beamsize_measurement.device.resolution
+                * 1e-6
+            )
             sv_cropped, bs_cropped = crop_scan(
                 scan_values=scan_values[i],
                 beam_sizes=beam_sizes[i],
@@ -295,21 +297,22 @@ class MLQuadScanEmittance(QuadScanEmittance):
                         self.min_signal_to_noise_ratio,
                     ],
                     scan_name: [
-                        "LESS_THAN", (self._get_cutoff_beamsize(dim_name))**2
+                        "LESS_THAN",
+                        (self._get_cutoff_beamsize(dim_name)) ** 2,
                     ],
                 }
 
         return vocs
-    
+
     def _get_cutoff_beamsize(self, dim_name):
         """
         return the cutoff beam size for the given dimension, returned in pixel scale
         """
         param_name = f"{dim_name}_rms_px_sq"
-        min_size = np.nanmin(
-            self.X.data[param_name].to_numpy(dtype="float")
+        min_size = np.nanmin(self.X.data[param_name].to_numpy(dtype="float"))
+        return np.max(
+            (
+                self.beamsize_cutoff_max * np.sqrt(min_size),
+                self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution,
+            )
         )
-        return np.max((
-            self.beamsize_cutoff_max * np.sqrt(min_size), 
-            self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution
-        ))

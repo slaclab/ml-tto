@@ -10,7 +10,9 @@ from ml_tto.automatic_emittance.plotting import plot_image_projection_fit
 
 
 class TestImageProjectionFit:
-    @pytest.mark.parametrize("image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()])
+    @pytest.mark.parametrize(
+        "image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()]
+    )
     def test_image_projection_fits(self, image_projection_fit):
         test_image = np.zeros((100, 100))
         test_image[40:60, 40:60] = 1.0
@@ -21,8 +23,16 @@ class TestImageProjectionFit:
         assert result.total_intensity == 400.0
         assert np.allclose(
             result.beam_extent,
-            [[result.centroid[0] - 2 * result.rms_size[0], result.centroid[0] + 2 * result.rms_size[0]],
-             [result.centroid[1] - 2 * result.rms_size[1], result.centroid[1] + 2 * result.rms_size[1]]],
+            [
+                [
+                    result.centroid[0] - 2 * result.rms_size[0],
+                    result.centroid[0] + 2 * result.rms_size[0],
+                ],
+                [
+                    result.centroid[1] - 2 * result.rms_size[1],
+                    result.centroid[1] + 2 * result.rms_size[1],
+                ],
+            ],
         )
 
         param_keys = {"amplitude", "mean", "sigma", "offset"}
@@ -52,23 +62,20 @@ class TestImageProjectionFit:
         assert np.allclose(result.centroid, 25.5, rtol=1e-2)
         assert np.allclose(result.rms_size, 1.0, atol=0.5)
 
-
-
-
-
-    @pytest.mark.parametrize("image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()])
+    @pytest.mark.parametrize(
+        "image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()]
+    )
     def test_image_projection_fit_with_bad_data(self, image_projection_fit):
-
         # test case where both directions are bad
         image = np.zeros((100, 100))
         image[10:90, 10:90] = 1.0
-        
+
         result = image_projection_fit.fit_image(image)
         assert np.all(np.isnan(result.centroid))
         assert np.all(np.isnan(result.rms_size))
 
         for ele in result.projection_fit_parameters:
-            for name,val in ele.items():
+            for name, val in ele.items():
                 assert np.all(np.isnan(val)), f"{name} is not NaN"
 
         # test case where one direction is bad
@@ -82,14 +89,22 @@ class TestImageProjectionFit:
         assert np.allclose(result.rms_size[0], 7.7789, rtol=1e-2)
 
         # check fit parameters
-        assert np.all(np.isnan(np.array(list(result.projection_fit_parameters[1].values())).astype(np.float64)))
-        assert np.allclose(result.projection_fit_parameters[0]["sigma"], 7.7789, rtol=1e-2)
-        
+        assert np.all(
+            np.isnan(
+                np.array(list(result.projection_fit_parameters[1].values())).astype(
+                    np.float64
+                )
+            )
+        )
+        assert np.allclose(
+            result.projection_fit_parameters[0]["sigma"], 7.7789, rtol=1e-2
+        )
+
         # test case where the "beam" is at the edge of the image
         image = np.zeros((100, 100))
         image[0:20, 40:60] = 1.0
         result = image_projection_fit.fit_image(image)
-        
+
         assert np.allclose(result.centroid[0], 49.5, rtol=1e-2)
         assert np.allclose(result.rms_size[0], 7.7789, rtol=1e-2)
         assert np.isnan(result.centroid[1])
@@ -97,8 +112,14 @@ class TestImageProjectionFit:
 
         assert np.allclose(
             result.beam_extent,
-            [[result.centroid[0] - 2 * result.rms_size[0], result.centroid[0] + 2 * result.rms_size[0]],
-             [-11.22,26.62]], atol=0.2
+            [
+                [
+                    result.centroid[0] - 2 * result.rms_size[0],
+                    result.centroid[0] + 2 * result.rms_size[0],
+                ],
+                [-11.22, 26.62],
+            ],
+            atol=0.2,
         )
 
         plot_image_projection_fit(result)

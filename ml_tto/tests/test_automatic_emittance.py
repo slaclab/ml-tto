@@ -14,8 +14,10 @@ from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
 from ml_tto.saver import H5Saver
-from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement, ScreenBeamProfileMeasurementResult
-
+from ml_tto.automatic_emittance.screen_profile import (
+    ScreenBeamProfileMeasurement,
+    ScreenBeamProfileMeasurementResult,
+)
 
 
 class MockBeamline:
@@ -204,7 +206,7 @@ class TestAutomaticEmittance:
 
                 # make sure that we return the initial quadrupole setting at the end
                 assert mock_beamline.magnet.bctrl == 0.01
-                
+
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
             beta_x=torch.tensor(5.0),
