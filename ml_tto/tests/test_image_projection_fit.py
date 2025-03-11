@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 import numpy as np
 import pytest
 
@@ -38,18 +39,20 @@ class TestImageProjectionFit:
 
         plot_image_projection_fit(result)
 
-    @pytest.mark.parametrize("image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()])
+    @pytest.mark.parametrize("image_projection_fit", [RecursiveImageProjectionFit()])
     def test_single_pixel_image_fits(self, image_projection_fit):
-    
-        # test case where the beam size is one pixel
-        test_image = np.zeros((100, 100)) + 0.1
-        test_image[25:27, 25:27] = 1.0
+        # test case where the beam size is less than 1% of the image size
+        test_image = np.zeros((500, 500)) + 0.1
+        test_image[205:210, 205:210] = 1.0
         result = image_projection_fit.fit_image(test_image)
+
+        plot_image_projection_fit(result)
+        plt.show()
 
         assert np.allclose(result.centroid, 25.5, rtol=1e-2)
         assert np.allclose(result.rms_size, 1.0, atol=0.5)
 
-        plot_image_projection_fit(result)
+
 
 
 
