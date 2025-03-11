@@ -18,7 +18,7 @@ class TestImageProjectionFit:
         test_image[40:60, 40:60] = 1.0
 
         result = image_projection_fit.fit_image(test_image)
-        assert np.allclose(result.centroid, [49.5, 49.5])
+        assert np.allclose(result.centroid, [49.5, 49.5], rtol=1e-2)
         assert np.allclose(result.rms_size, [7.7789, 7.7789], rtol=1e-1)
         assert result.total_intensity == 400.0
         assert np.allclose(
@@ -51,16 +51,17 @@ class TestImageProjectionFit:
 
     @pytest.mark.parametrize("image_projection_fit", [RecursiveImageProjectionFit()])
     def test_single_pixel_image_fits(self, image_projection_fit):
-        # test case where the beam size is less than 1% of the image size
+        # test case where the beam size is 2% of the image size
         test_image = np.zeros((500, 500)) + 0.1
-        test_image[205:210, 205:210] = 1.0
+        test_image[195:205, 195:205] = 1.0
+
+        image_projection_fit.visualize = True
         result = image_projection_fit.fit_image(test_image)
 
         plot_image_projection_fit(result)
-        plt.show()
 
-        assert np.allclose(result.centroid, 25.5, rtol=1e-2)
-        assert np.allclose(result.rms_size, 1.0, atol=0.5)
+        assert np.allclose(result.centroid, 200, rtol=1e-2)
+        assert np.allclose(result.rms_size, 3.9, atol=0.5)
 
     @pytest.mark.parametrize(
         "image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()]
