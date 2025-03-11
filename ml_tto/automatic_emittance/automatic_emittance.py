@@ -122,7 +122,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
         generator = UpperConfidenceBoundGenerator(
             vocs=vocs,
             beta=self.beta,
-            numerical_optimizer=GridOptimizer(n_grid_points=self.n_grid_points),
+            numerical_optimizer=GridOptimizer(
+                n_grid_points=self.n_grid_points
+            ),
             n_interpolate_points=self.n_interpolate_points,
             n_monte_carlo_samples=64,
         )
@@ -235,8 +237,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # Call wrapper that takes quads in machine units and beamsize in meters
         results = compute_emit_bmag_machine_units(**inputs)
 
-        results.update({"metadata": self.model_dump(),
-                        "resolution": self.beamsize_measurement.device.resolution})
+        results.update(
+            {
+                "metadata": self.model_dump()
+                | {"resolution": self.beamsize_measurement.device.resolution}
+            },
+        )
 
         # collect information into EmittanceMeasurementResult object
         return EmittanceMeasurementResult(**results)
@@ -313,6 +319,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         return np.max(
             (
                 self.beamsize_cutoff_max * np.sqrt(min_size),
-                self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution,
+                self.min_beamsize_cutoff
+                / self.beamsize_measurement.device.resolution,
             )
         )
