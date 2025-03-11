@@ -6,6 +6,7 @@ import numpy as np
 from numpy import ndarray
 from pydantic import ConfigDict, PositiveFloat, Field, confloat
 import scipy
+import scipy.ndimage
 from scipy.stats import norm, gamma, uniform
 
 from lcls_tools.common.data.fit.methods import GaussianModel
@@ -75,8 +76,8 @@ ml_gaussian_parameters = ModelParameters(
     name="Gaussian Parameters",
     parameters={
         "mean": Parameter(bounds=[0.01, 1.0]),
-        "sigma": Parameter(bounds=[0.00001, 5.0]),
-        "amplitude": Parameter(bounds=[0.01, 1.0]),
+        "sigma": Parameter(bounds=[1e-8, 5.0]),
+        "amplitude": Parameter(bounds=[0.5, 1.0]),
         "offset": Parameter(bounds=[0.01, 1.0]),
     },
 )
@@ -122,8 +123,12 @@ class MLGaussianModel(GaussianModel):
         # mean_prior = uniform(0.0001, 1.0)
         # sigma_alpha = 2.5
         # sigma_beta = 5.0
+        # sigma_mean = init_values["sigma"]
+        # sigma_var = 0.5 * sigma_mean
+        # sigma_alpha = (sigma_mean**2) / sigma_var
+        # sigma_beta = sigma_mean / sigma_var
         # sigma_prior = gamma(sigma_alpha, loc=0, scale=1 / sigma_beta)
-        sigma_prior = uniform(0.00001, 5.0)
+        sigma_prior = uniform(1e-8, 5.0)
 
         # Creating a normal distribution of points around initial offset.
         offset_prior = norm(init_values["offset"], 0.5)
@@ -226,11 +231,12 @@ class ImageProjectionFit(ImageProjectionFit):
 
 class RecursiveImageProjectionFit(ImageProjectionFit):
     n_stds: PositiveFloat = Field(
-        4.0, description="Number of standard deviations to use for the bounding box"
+        8.0, description="Number of standard deviations to use for the bounding box"
     )
     projection_fit: Optional[ProjectionFit] = MLProjectionFit(
         model=MLGaussianModel(use_priors=True), relative_filter_size=0.01
     )
+    visualize_fit: bool = False
 
     def _fit_image(self, image: np.ndarray) -> ImageProjectionFitResult:
         """
@@ -248,7 +254,11 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         3. If the fit is not successful in either direction then return the original image and fit parameters
 
         """
-        fresult = super()._fit_image(image)
+        initial_fit = ImageProjectionFit(signal_to_noise_threshold=0.01)
+        fresult = initial_fit.fit_image(scipy.ndimage.maximum_filter(image, size=10))
+
+        if self.visualize_fit:
+            plot_image_projection_fit(fresult)
 
         rms_size = np.array(fresult.rms_size)
         centroid = np.array(fresult.centroid)
@@ -294,5 +304,8 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
                 # we cropped in this direction so we need to update the fit parameters
                 result.centroid[i] += centroid[i] - crop_widths[i] / 2
                 result.beam_extent[i] += centroid[i] - crop_widths[i] / 2
+
+        if self.visualize_fit:
+            plot_image_projection_fit(result)
 
         return result
