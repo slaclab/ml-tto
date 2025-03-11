@@ -125,8 +125,8 @@ class TestAutomaticEmittance:
         assert isinstance(result, dict)
         # assert "bb_penalty" in result
         # assert "log10_total_intensity" in result
-        assert "scaled_x_rms_px" in result
-        assert "scaled_y_rms_px" in result
+        assert "x_rms_px_sq" in result
+        assert "y_rms_px_sq" in result
 
         # test case where k > 5.0 -- should return low intensity and NaN beam sizes
         # inputs = {"k": 10.0}
