@@ -26,7 +26,6 @@ from ml_tto.automatic_emittance.scan_cropping import crop_scan
 
 class MLQuadScanEmittance(QuadScanEmittance):
     scan_values: Optional[list[float]] = []
-    beamsize_measurement: SerializeAsAny[ScreenBeamProfileMeasurement]
     n_initial_samples: PositiveInt = 3
     n_iterations: PositiveInt = 5
     max_scan_range: Optional[list[float]] = [-10.0, 10.0]
