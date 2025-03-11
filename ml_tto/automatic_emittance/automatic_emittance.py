@@ -235,7 +235,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # Call wrapper that takes quads in machine units and beamsize in meters
         results = compute_emit_bmag_machine_units(**inputs)
 
-        results.update({"metadata": self.model_dump()})
+        results.update({"metadata": self.model_dump(),
+                        "resolution": self.beamsize_measurement.device.resolution})
 
         # collect information into EmittanceMeasurementResult object
         return EmittanceMeasurementResult(**results)
