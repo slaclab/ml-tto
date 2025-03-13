@@ -4,9 +4,10 @@ import warnings
 
 import numpy as np
 from numpy import ndarray
-from pydantic import ConfigDict, PositiveFloat, Field, confloat
+from pydantic import ConfigDict, PositiveFloat, Field, PositiveInt, confloat
 import scipy
 import scipy.ndimage
+import scipy.signal
 from scipy.stats import norm, gamma, uniform
 
 from lcls_tools.common.data.fit.methods import GaussianModel
@@ -14,7 +15,6 @@ from lcls_tools.common.data.fit.projection import ProjectionFit
 from lcls_tools.common.image.fit import ImageProjectionFit, ImageFitResult
 from lcls_tools.common.data.fit.method_base import MethodBase
 from lcls_tools.common.measurements.utils import NDArrayAnnotatedType
-
 
 from lcls_tools.common.data.fit.method_base import (
     ModelParameters,
@@ -236,6 +236,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
     projection_fit: Optional[ProjectionFit] = MLProjectionFit(
         model=MLGaussianModel(use_priors=True), relative_filter_size=0.01
     )
+    initial_filter_size: PositiveInt = 10
     visualize: bool = False
 
     def _fit_image(self, image: np.ndarray) -> ImageProjectionFitResult:
@@ -255,7 +256,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         """
         initial_fit = ImageProjectionFit(signal_to_noise_threshold=0.01)
-        fresult = initial_fit.fit_image(scipy.ndimage.median_filter(image, size=10))
+        fresult = initial_fit.fit_image(scipy.ndimage.gaussian_filter(image, self.initial_filter_size))
 
         if self.visualize:
             plot_image_projection_fit(fresult)
