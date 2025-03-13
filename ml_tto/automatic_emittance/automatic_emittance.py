@@ -34,6 +34,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     min_signal_to_noise_ratio: float = 4.0
     n_interpolate_points: Optional[PositiveInt] = 3
     n_grid_points: PositiveInt = 100
+    n_initial_points: PositiveInt = 5
     min_beamsize_cutoff: float = 100.0  # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
@@ -170,7 +171,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self.X.evaluate_data({"k": current_k})
 
         # fast scan to get initial guess
-        self.X.evaluate_data({"k": np.linspace(*self.max_scan_range, 5)})
+        self.X.evaluate_data({"k": np.linspace(*self.max_scan_range, self.n_initial_points)})
 
         # run iterations for x/y -- ignore warnings from UCB generator
         self.run_iterations("x", self.n_iterations)
@@ -236,13 +237,10 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         # Call wrapper that takes quads in machine units and beamsize in meters
         results = compute_emit_bmag_machine_units(**inputs)
-
-        results.update(
-            {
-                "metadata": self.model_dump()
-                | {"resolution": self.beamsize_measurement.device.resolution}
-            },
-        )
+        results.update({"metadata": self.model_dump() | {
+            "resolution": self.beamsize_measurement.device.resolution,
+            "image_data": {str(sval):ele.model_dump() for sval,ele in zip(self.scan_values, self._info)}
+        }})
 
         # collect information into EmittanceMeasurementResult object
         return EmittanceMeasurementResult(**results)
