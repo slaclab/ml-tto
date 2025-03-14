@@ -198,3 +198,4 @@ dkms.conf
 dev/
 
 *.h5
+*lightning_logs/
