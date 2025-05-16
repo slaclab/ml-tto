@@ -256,7 +256,9 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         """
         initial_fit = ImageProjectionFit(signal_to_noise_threshold=0.01)
-        fresult = initial_fit.fit_image(scipy.ndimage.gaussian_filter(image, self.initial_filter_size))
+        fresult = initial_fit.fit_image(
+            scipy.ndimage.gaussian_filter(image, self.initial_filter_size)
+        )
 
         if self.visualize:
             plot_image_projection_fit(fresult)
@@ -303,8 +305,8 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         for i in range(2):
             if np.isfinite(result.rms_size[i]) and np.isfinite(centroid[i]):
                 # we cropped in this direction so we need to update the fit parameters
-                result.centroid[i] += centroid[i] - crop_widths[i] / 2 + 0.5
-                result.beam_extent[i] += centroid[i] - crop_widths[i] / 2 + 0.5
+                result.centroid[i] += centroid[i] - crop_widths[i] / 2 + 1.0
+                result.beam_extent[i] += centroid[i] - crop_widths[i] / 2 + 1.0
 
         if self.visualize:
             plot_image_projection_fit(result)
