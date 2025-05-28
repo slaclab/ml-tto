@@ -4,7 +4,7 @@ from lcls_tools.common.devices.screen import Screen
 from ml_tto.automatic_emittance.image_projection_fit import ImageProjectionFit
 from lcls_tools.common.image.fit import ImageFit
 from lcls_tools.common.image.processing import ImageProcessor
-from lcls_tools.common.measurements.measurement import Measurement
+from lcls_tools.common.measurements.screen_profile import ScreenBeamProfileMeasurement
 from pydantic import (
     ConfigDict,
     SerializeAsAny,
@@ -47,7 +47,7 @@ class ScreenBeamProfileMeasurementResult(lcls_tools.common.BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
 
-class ScreenBeamProfileMeasurement(Measurement):
+class ScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
     """
     Class that allows for beam profile measurements and fitting
     ------------------------

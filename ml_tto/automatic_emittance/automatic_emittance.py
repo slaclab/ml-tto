@@ -1,4 +1,3 @@
-from copy import deepcopy
 import warnings
 
 import numpy as np
@@ -7,20 +6,12 @@ from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
 from lcls_tools.common.measurements.emittance_measurement import (
     QuadScanEmittance,
-    EmittanceMeasurementResult,
 )
-from lcls_tools.common.image.roi import ROI
-from lcls_tools.common.data.emittance import compute_emit_bmag
-from lcls_tools.common.data.model_general_calcs import bdes_to_kmod, get_optics
 from typing import Optional, Tuple
 
-from pydantic import PositiveInt, SerializeAsAny, field_validator
+from pydantic import PositiveInt
 import time
 
-from ml_tto.automatic_emittance.utils import compute_emit_bmag_machine_units
-from ml_tto.automatic_emittance.screen_profile import (
-    ScreenBeamProfileMeasurement,
-)
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
 
 
@@ -41,41 +32,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
     visualize_bo: bool = False
     visualize_cropping: bool = False
     verbose: bool = False
-
-    @field_validator("beamsize_measurement", mode="after")
-    def validate_beamsize_measurement(cls, v, info):
-        # check to make sure the the beamsize measurement screen has a region of interest
-        # (also requires ScreenBeamProfileMeasurement)
-        if not isinstance(v, ScreenBeamProfileMeasurement):
-            raise ValueError(
-                "Beamsize measurement must be a ScreenBeamProfileMeasurement for MLQuadScanEmittance"
-            )
-
-        return v
-        # check to make sure the the beamsize measurement screen has a region of interest
-        # if not isinstance(v.image_processor.roi, ROI):
-        #    raise ValueError(
-        #        "Beamsize measurement screen must have a region of interest"
-        #    )
-        # return v
-
-    def measure(self):
-        """
-        Conduct quadrupole scan to measure the beam phase space.
-
-        Returns:
-        -------
-        result : EmittanceMeasurementResult
-            Object containing the results of the emittance measurement
-        """
-
-        # reset the scan values and info
-        self.reset()
-
-        # scan magnet strength and measure beamsize
-        self.perform_beamsize_measurements()
-
-        return self.calculate_emittance()
 
     def _evaluate(self, inputs):
         # set quadrupole strength
@@ -179,71 +135,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         # reset quadrupole strength to original value
         self.magnet.bctrl = current_k
-
-    def calculate_emittance(self):
-        """
-        Run the emittance fit using the measured beam sizes and quadrupole strengths.
-        """
-
-        # extract beam sizes from info
-        scan_values, beam_sizes = self._get_beamsizes_scan_values_from_info()
-
-        # get transport matrix and design twiss values from meme
-        # TODO: get settings from arbitrary methods (ie. not meme)
-        if self.rmat is None and self.design_twiss is None:
-            optics = get_optics(
-                self.magnet_name,
-                self.device_measurement.device.name,
-            )
-
-            self.rmat = optics["rmat"]
-            self.design_twiss = optics["design_twiss"]
-
-        magnet_length = self.magnet.metadata.l_eff
-        if magnet_length is None:
-            raise ValueError(
-                "magnet length needs to be specified for magnet "
-                f"{self.magnet.name} to be used in emittance measurement"
-            )
-
-        # organize data into arrays for use in `compute_emit_bmag`
-        # rmat = np.stack([self.rmat[0:2, 0:2], self.rmat[2:4, 2:4]])
-        if self.design_twiss:
-            twiss_betas_alphas = np.array(
-                [
-                    [
-                        self.design_twiss["beta_x"],
-                        self.design_twiss["alpha_x"],
-                    ],
-                    [
-                        self.design_twiss["beta_y"],
-                        self.design_twiss["alpha_y"],
-                    ],
-                ]
-            )
-        else:
-            twiss_betas_alphas = None
-
-        inputs = {
-            "quad_vals": scan_values,
-            "beamsizes": beam_sizes,
-            "q_len": magnet_length,
-            "rmat": self.rmat,
-            "energy": self.energy,
-            "twiss_design": (
-                twiss_betas_alphas if twiss_betas_alphas is not None else None
-            ),
-        }
-
-        # Call wrapper that takes quads in machine units and beamsize in meters
-        results = compute_emit_bmag_machine_units(**inputs)
-        results.update({"metadata": self.model_dump() | {
-            "resolution": self.beamsize_measurement.device.resolution,
-            "image_data": {str(sval):ele.model_dump() for sval,ele in zip(self.scan_values, self._info)}
-        }})
-
-        # collect information into EmittanceMeasurementResult object
-        return EmittanceMeasurementResult(**results)
 
     def _get_beamsizes_scan_values_from_info(self) -> Tuple[np.ndarray]:
         """
