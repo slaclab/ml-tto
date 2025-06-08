@@ -120,14 +120,6 @@ class MLGaussianModel(GaussianModel):
 
         # Creating a normal distribution of points around the inital mean.
         mean_prior = norm(init_values["mean"], 0.1)
-        # mean_prior = uniform(0.0001, 1.0)
-        # sigma_alpha = 2.5
-        # sigma_beta = 5.0
-        # sigma_mean = init_values["sigma"]
-        # sigma_var = 0.5 * sigma_mean
-        # sigma_alpha = (sigma_mean**2) / sigma_var
-        # sigma_beta = sigma_mean / sigma_var
-        # sigma_prior = gamma(sigma_alpha, loc=0, scale=1 / sigma_beta)
         sigma_prior = uniform(1e-8, 5.0)
 
         # Creating a normal distribution of points around initial offset.
