@@ -79,9 +79,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         generator = UpperConfidenceBoundGenerator(
             vocs=vocs,
             beta=self.beta,
-            numerical_optimizer=GridOptimizer(
-                n_grid_points=self.n_grid_points
-            ),
+            numerical_optimizer=GridOptimizer(n_grid_points=self.n_grid_points),
             n_interpolate_points=self.n_interpolate_points,
             n_monte_carlo_samples=64,
         )
@@ -127,7 +125,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self.X.evaluate_data({"k": current_k})
 
         # fast scan to get initial guess
-        self.X.evaluate_data({"k": np.linspace(*self.max_scan_range, self.n_initial_points)})
+        self.X.evaluate_data(
+            {"k": np.linspace(*self.max_scan_range, self.n_initial_points)}
+        )
 
         # run iterations for x/y -- ignore warnings from UCB generator
         self.run_iterations("x", self.n_iterations)
@@ -208,7 +208,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         return np.max(
             (
                 self.beamsize_cutoff_max * np.sqrt(min_size),
-                self.min_beamsize_cutoff
-                / self.beamsize_measurement.device.resolution,
+                self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution,
             )
         )
