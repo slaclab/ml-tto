@@ -121,13 +121,17 @@ class MLQuadScanEmittance(QuadScanEmittance):
             warnings.simplefilter("ignore")
             self.create_xopt_object(self.get_vocs("x"))
 
-        # evaluate the current point
-        self.X.evaluate_data({"k": current_k})
-
-        # fast scan to get initial guess
-        self.X.evaluate_data(
-            {"k": np.linspace(*self.max_scan_range, self.n_initial_points)}
+        # fast scan to get initial guess -- start from current k and scan to the far end of the range
+        initial_scan_values = np.linspace(
+            current_k,
+            self.max_scan_range[0]
+            if np.abs(current_k - self.max_scan_range[0])
+            > np.abs(current_k - self.max_scan_range[1])
+            else self.max_scan_range[1],
+            self.n_initial_points,
         )
+
+        self.X.evaluate_data({"k": initial_scan_values})
 
         # run iterations for x/y -- ignore warnings from UCB generator
         self.run_iterations("x", self.n_iterations)

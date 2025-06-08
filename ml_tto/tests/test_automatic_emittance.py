@@ -18,6 +18,7 @@ from ml_tto.automatic_emittance.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
 )
+import matplotlib.pyplot as plt
 
 
 class MockBeamline:
@@ -165,7 +166,8 @@ class TestAutomaticEmittance:
                 )
 
                 mock_beamline = MockBeamline(initial_beam)
-                mock_beamline.magnet.bctrl = 0.01
+                initial_bctrl = np.random.randn()
+                mock_beamline.magnet.bctrl = initial_bctrl
 
                 # Instantiate the QuadScanEmittance object
                 quad_scan = MLQuadScanEmittance(
@@ -205,7 +207,9 @@ class TestAutomaticEmittance:
                 )
 
                 # make sure that we return the initial quadrupole setting at the end
-                assert mock_beamline.magnet.bctrl == 0.01
+                assert mock_beamline.magnet.bctrl == initial_bctrl
+
+                plt.show()
 
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
