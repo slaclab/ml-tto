@@ -113,13 +113,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
         """
         Run BO-based exploration of the quadrupole strength to get beamsize measurements
         """
-        # get current value of k
-        current_k = self.magnet.bctrl
 
         # ignore warnings from UCB generator and Xopt
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.create_xopt_object(self.get_vocs("x"))
+
+        # get current value of k
+        current_k = self.magnet.bctrl
 
         # fast scan to get initial guess -- start from current k and scan to the far end of the range
         initial_scan_values = np.linspace(
@@ -131,14 +132,18 @@ class MLQuadScanEmittance(QuadScanEmittance):
             self.n_initial_points,
         )
 
-        self.X.evaluate_data({"k": initial_scan_values})
+        try:
+            self.X.evaluate_data({"k": initial_scan_values})
 
-        # run iterations for x/y -- ignore warnings from UCB generator
-        self.run_iterations("x", self.n_iterations)
-        self.run_iterations("y", self.n_iterations)
+            # run iterations for x/y -- ignore warnings from UCB generator
+            self.run_iterations("x", self.n_iterations)
+            self.run_iterations("y", self.n_iterations)
 
-        # reset quadrupole strength to original value
-        self.magnet.bctrl = current_k
+        except Exception as e:
+            raise e
+        finally:
+            # reset quadrupole strength to original value
+            self.magnet.bctrl = current_k
 
     def _get_beamsizes_scan_values_from_info(self) -> Tuple[np.ndarray]:
         """
