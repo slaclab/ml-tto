@@ -55,10 +55,16 @@ class MLQuadScanEmittance(QuadScanEmittance):
         fit_result = self._info[-1]
 
         # replace last element of info with validated result
-        for i, ele in enumerate(fit_result.signal_to_noise_ratios):
-            if ele < self.min_signal_to_noise_ratio:
-                fit_result.rms_sizes[i] = np.nan
-                fit_result.centroids[i] = np.nan
+        fit_result.rms_sizes = np.where(
+            fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
+            np.nan,
+            fit_result.rms_sizes,
+        )
+        fit_result.centroids = np.where(
+            fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
+            np.nan,
+            fit_result.centroids,
+        )
 
         validated_result = fit_result
         self._info[-1] = validated_result
