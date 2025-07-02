@@ -31,9 +31,14 @@ def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> d
     return bounds
 
 
-def run_automatic_alignment(env):
+def run_automatic_alignment(env, to_screen_name="OTRDG02"):
     """
-    Runs the automatic alignment optimization process on DIAG0.
+    Runs the automatic alignment optimization process on DIAG0 to
+    `to_screen_name`.
+
+    Parameters:
+        env (Environment): The environment in which the optimization is performed.
+        to_screen_name (str): The name of the screen to align to. Default is "OTRDG02".
 
     """
 
@@ -47,10 +52,15 @@ def run_automatic_alignment(env):
     def eval(inputs):
         env.set_variables(inputs)
 
-        bpm_observables = []
-        for ele in env.bpm_observables:
-            if not ("470" in ele or "520" in ele):
-                bpm_observables.append(ele)
+        # if just transporting beam to OTRDG02, use all BPMs except 470 and 520
+        if to_screen_name == "OTRDG02":
+            bpm_observables = []
+            for ele in env.bpm_observables:
+                if not ("470" in ele or "520" in ele):
+                    bpm_observables.append(ele)
+        else:
+            # if aligning to OTRDG04, use all BPMs
+            bpm_observables = env.bpm_observables
 
         bpm_signals = env.get_observables(bpm_observables)
 

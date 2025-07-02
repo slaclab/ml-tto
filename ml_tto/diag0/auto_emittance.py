@@ -9,6 +9,7 @@ def run_automatic_emittance(env, screen_name):
     Returns:
         ScreenBeamProfileMeasurementResult: The result of the beam profile measurement.
         fname (str): The filename where the results are saved.
+        X: Xopt object from the emittance measurement.
     """
     energy = env.get_variables(["BEND:DIAG0:155:BCTRL"])["BEND:DIAG0:155:BCTRL"] * 1e9
 
@@ -29,4 +30,4 @@ def run_automatic_emittance(env, screen_name):
         env._emittance_measurement_object.energy = energy
 
     emittance_result, fname = env.run_emittance_measurement()
-    return emittance_result, fname
+    return emittance_result, fname, env._emittance_measurement_object.X

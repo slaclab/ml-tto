@@ -187,7 +187,7 @@ class MLTCAVPhasing(BaseModel):
 
 
 def run_automatic_tcav_phasing(env):
-    tcav = env.create_tcav()
+    tcav = env.tcav
     profile_measurement = env.create_beamprofile_measurement()
 
     phaser = MLTCAVPhasing(
