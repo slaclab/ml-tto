@@ -2,6 +2,7 @@ from ml_tto.diag0.auto_emittance import run_automatic_emittance
 
 from ml_tto.saver import H5Saver
 
+
 def run_automatic_6d_measurement(env, save_filename):
     """
     Does the following:
@@ -24,14 +25,18 @@ def run_automatic_6d_measurement(env, save_filename):
 
     # run automatic emittance measurement with TCAV off
     emittance_result_OTRDG02_off, _, X = run_automatic_emittance(env, "OTRDG02")
-    data["OTRDG02_off"] = emittance_result_OTRDG02_off
+    data["OTRDG02_off"] = emittance_result_OTRDG02_off.model_dump() | {
+        "environment_variables": env.get_variables(env.variables.keys())
+    }
 
     # turn on TCAV
     env.tcav.amp_set = env.tcav_on_amp
 
     # run automatic emittance measurement with TCAV on
     emittance_result_OTRDG02_on, _, X = run_automatic_emittance(env, "OTRDG02")
-    data["OTRDG02_on"] = emittance_result_OTRDG02_on
+    data["OTRDG02_on"] = emittance_result_OTRDG02_on.model_dump() | {
+        "environment_variables": env.get_variables(env.variables.keys())
+    }
 
     # remove OTRDG02 and insert OTRDG04
     env.remove_screen("OTRDG02")
@@ -42,14 +47,18 @@ def run_automatic_6d_measurement(env, save_filename):
 
     # run automatic emittance measurement with TCAV off
     emittance_result_OTRDG04_off, _, X = run_automatic_emittance(env, "OTRDG04")
-    data["OTRDG04_off"] = emittance_result_OTRDG04_off
+    data["OTRDG04_off"] = emittance_result_OTRDG04_off.model_dump() | {
+        "environment_variables": env.get_variables(env.variables.keys())
+    }
 
     # turn on TCAV
     env.tcav.amp_set = env.tcav_on_amp
 
     # run automatic emittance measurement with TCAV on
     emittance_result_OTRDG04_on, _, X = run_automatic_emittance(env, "OTRDG04")
-    data["OTRDG04_on"] = emittance_result_OTRDG04_on
+    data["OTRDG04_on"] = emittance_result_OTRDG04_on.model_dump() | {
+        "environment_variables": env.get_variables(env.variables.keys())
+    }
 
     # set the tcav amp back to 0.0
     env.tcav.amp_set = 0.0
@@ -59,6 +68,3 @@ def run_automatic_6d_measurement(env, save_filename):
     saver.save(data)
 
     return data
-
-    
-
