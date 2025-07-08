@@ -1,5 +1,5 @@
 from xopt import Xopt, Evaluator, VOCS
-from xopt.generators.bayesian import UpperConfidenceBoundGenerator
+from xopt.generators.bayesian import ExpectedImprovementGenerator
 import numpy as np
 
 
@@ -31,7 +31,7 @@ def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> d
     return bounds
 
 
-def run_automatic_alignment(env, to_screen_name="OTRDG02"):
+def run_automatic_alignment(env, to_screen_name="OTRDG02", n_steps=20):
     """
     Runs the automatic alignment optimization process on DIAG0 to
     `to_screen_name`.
@@ -45,9 +45,7 @@ def run_automatic_alignment(env, to_screen_name="OTRDG02"):
     pvs = list(env.corrector_variables.keys())
 
     vocs = VOCS(variables=env.get_bounds(pvs), objectives={"rms": "MINIMIZE"})
-    local_region = get_local_region(
-        env.get_variables(vocs.variables.keys()), vocs, 0.05
-    )
+    local_region = get_local_region(env.get_variables(vocs.variables.keys()), vocs, 0.1)
 
     def eval(inputs):
         env.set_variables(inputs)
@@ -62,12 +60,21 @@ def run_automatic_alignment(env, to_screen_name="OTRDG02"):
             # if aligning to OTRDG04, use all BPMs
             bpm_observables = env.bpm_observables
 
-        bpm_signals = env.get_observables(bpm_observables)
+        transmission = env.get_observables(["transmission"])["transmission"]
+        try:
+            bpm_signals = env.get_observables(bpm_observables)
+            rms = np.std([bpm_signals[name] for name in bpm_observables])
+        except KeyError:
+            rms = np.NaN
 
-        return {"rms": np.std([bpm_signals[name] for name in bpm_observables])}
+        return {"rms": rms, "transmission": transmission}
 
-    vocs = VOCS(variables=local_region, objectives={"rms": "MINIMIZE"})
-    generator = UpperConfidenceBoundGenerator(vocs=vocs, beta=0.1)
+    vocs = VOCS(
+        variables=local_region,
+        objectives={"rms": "MINIMIZE"},
+        constraints={"transmission": ["GREATER_THAN", 0.8]},
+    )
+    generator = ExpectedImprovementGenerator(vocs=vocs)
     evaluator = Evaluator(function=eval)
 
     X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator)
@@ -75,7 +82,7 @@ def run_automatic_alignment(env, to_screen_name="OTRDG02"):
     X.evaluate_data(env.get_variables(vocs.variables.keys()))
     X.random_evaluate(2)
 
-    for i in range(20):
+    for i in range(n_steps):
         print(i)
         X.step()
 
