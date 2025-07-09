@@ -14,7 +14,7 @@ def run_automatic_emittance(env, screen_name):
     energy = env.get_variables(["BEND:DIAG0:155:BCTRL"])["BEND:DIAG0:155:BCTRL"] * 1e9
 
     if screen_name == "OTRDG02":
-        env.emittance_config_fname = "/home/physics/badger/resources/dev/diag0/emittance_measurement_configs/OTRDG02.yaml"
+        env.emittance_config_fname = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG02.yaml"
         env.beamsize_cutoff_max = 5.0
         env.min_beamsize_cutoff = 1000
         env._create_emittance_object()
@@ -22,7 +22,7 @@ def run_automatic_emittance(env, screen_name):
         env._emittance_measurement_object.energy = energy
 
     elif screen_name == "OTRDG04":
-        env.emittance_config_fname = "/home/physics/badger/resources/dev/diag0/emittance_measurement_configs/OTRDG04.yaml"
+        env.emittance_config_fname = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG04.yaml"
         env.beamsize_cutoff_max = 5.0
         env.min_beamsize_cutoff = 1000
         env._create_emittance_object()
