@@ -7,7 +7,7 @@ from xopt.numerical_optimizer import GridOptimizer
 from lcls_tools.common.measurements.emittance_measurement import (
     QuadScanEmittance,
 )
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 from pydantic import PositiveInt
 import time
@@ -16,8 +16,37 @@ from ml_tto.automatic_emittance.scan_cropping import crop_scan
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
+    """
+    Machine learning-based quadrupole scan emittance measurement.
+
+    This class uses Bayesian optimization to explore the quadrupole strength
+    and measure the beam size at different quadrupole settings. It uses the
+    Xopt library to perform the optimization.
+
+    Attributes:
+        scan_values (list[float]): List of quadrupole strengths used in the scan.
+        n_initial_points (PositiveInt): Number of initial points for the optimization.
+        n_iterations (PositiveInt): Number of iterations for the optimization.
+        max_scan_range (Optional[list[float]]): Maximum scan range for the quadrupole strength.
+        X (Optional[Xopt]): Xopt object for Bayesian optimization.
+        min_signal_to_noise_ratio (float): Minimum signal-to-noise ratio for valid measurements.
+        n_interpolate_points (Optional[PositiveInt]): Number of interpolation measurements made in-between BO-chosen points.
+        n_grid_points (PositiveInt): Number of grid points for the numerical optimizer.
+        min_beamsize_cutoff (float): Minimum beam size cutoff in microns.
+        beamsize_cutoff_max (float): Maximum beam size cutoff as a multiple of the minimum beam size measured.
+        beta (float): Exploration parameter for the Bayesian optimization.
+        visualize_bo (bool): Whether to visualize the Bayesian optimization process.
+        visualize_cropping (bool): Whether to visualize the cropping of the scan.
+        verbose (bool): Whether to print verbose output during the measurement.
+
+        evaluate_callback (Optional[callable]): Optional callback function to evaluate additional metrics at each quad strength during the scan.
+            Should be in the form of `evaluate_callback(inputs: dict, fit_result: ImageProjectionFitResult) -> dict`.
+            Additional results will be added to the `X.data` attribute.
+
+    """
+
     scan_values: Optional[list[float]] = []
-    n_initial_samples: PositiveInt = 3
+    n_initial_points: PositiveInt = 5
     n_iterations: PositiveInt = 5
     max_scan_range: Optional[list[float]] = [-10.0, 10.0]
     X: Optional[Xopt] = None
@@ -25,13 +54,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
     min_signal_to_noise_ratio: float = 4.0
     n_interpolate_points: Optional[PositiveInt] = 3
     n_grid_points: PositiveInt = 100
-    n_initial_points: PositiveInt = 5
     min_beamsize_cutoff: float = 100.0  # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
     visualize_bo: bool = False
     visualize_cropping: bool = False
     verbose: bool = False
+
+    evaluate_callback: Optional[Callable] = None
 
     def _evaluate(self, inputs):
         # set quadrupole strength
@@ -80,6 +110,13 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 validated_result.signal_to_noise_ratios
             ),
         }
+
+        if self.evaluate_callback is not None:
+            additional_results = self.evaluate_callback(
+                inputs=inputs, fit_result=validated_result
+            )
+            results.update(additional_results)
+
         if self.verbose:
             print(f"Results: {results}")
 

@@ -115,7 +115,7 @@ class TestAutomaticEmittance:
             beamsize_measurement=mock_beamline.beamsize_measurement,
             n_measurement_shots=1,
             wait_time=1e-3,
-            n_initial_samples=1,
+            n_initial_points=1,
             n_iterations=1,
             max_scan_range=[-10, 10],
         )
@@ -178,7 +178,7 @@ class TestAutomaticEmittance:
                     wait_time=1e-3,
                     rmat=rmat,
                     design_twiss=design_twiss_ele,
-                    n_initial_samples=3,
+                    n_initial_points=3,
                     n_iterations=3,
                     max_scan_range=[-10, 10],
                 )
@@ -208,7 +208,6 @@ class TestAutomaticEmittance:
 
                 # make sure that we return the initial quadrupole setting at the end
                 assert mock_beamline.magnet.bctrl == initial_bctrl
-
 
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
@@ -256,7 +255,7 @@ class TestAutomaticEmittance:
             wait_time=1e-3,
             rmat=rmat,
             design_twiss=design_twiss,
-            n_initial_samples=1,
+            n_initial_points=1,
             n_iterations=1,
             max_scan_range=[-10, 10],
             save_location=".",
@@ -276,3 +275,75 @@ class TestAutomaticEmittance:
         # Check if the loaded dictionary is the same as the original
         assert result_dict.keys() == loaded_dict.keys()
         # TODO: continue test
+
+    def test_evaluate_callback(self):
+        initial_beam = ParameterBeam.from_twiss(
+            beta_x=torch.tensor(5.0),
+            alpha_x=torch.tensor(5.0),
+            emittance_x=torch.tensor(1e-8),
+            beta_y=torch.tensor(3.0),
+            alpha_y=torch.tensor(3.0),
+            emittance_y=torch.tensor(1e-7),
+        )
+
+        mock_beamline = MockBeamline(initial_beam)
+
+        rmat = np.array([[[1, 1.0], [0, 1]], [[1, 1.0], [0, 1]]])
+        design_twiss = {
+            "beta_x": 0.2452,
+            "alpha_x": -0.1726,
+            "beta_y": 0.5323,
+            "alpha_y": -1.0615,
+        }
+
+        screen = MagicMock(Screen)
+
+        # create a mock Screen device
+        def mock_get_image(*args):
+            image = np.zeros((100, 100))
+            image[40:60, 40:60] = 255
+            return image
+
+        type(screen).image = property(mock_get_image)
+        screen.resolution = 1.0
+
+        image_processor = ImageProcessor(roi=CircularROI(center=[50, 50], radius=50))
+        screen_measurement = ScreenBeamProfileMeasurement(
+            device=screen,
+            image_processor=image_processor,
+        )
+
+        def test_callback(inputs, fit_result):
+            """
+            Example callback function to evaluate additional metrics.
+            This function can be customized to return any additional metrics
+            based on the inputs and fit_result.
+            """
+            # For demonstration, we return the k value and the beam size
+            return {
+                "my_callback_k": inputs["k"],
+                "my_callback_x_rms_px": fit_result.rms_sizes[0, 0],
+                "my_callback_y_rms_px": fit_result.rms_sizes[0, 1],
+            }
+
+        # Instantiate the QuadScanEmittance object
+        quad_scan = MLQuadScanEmittance(
+            energy=1e9 * 299.792458 / 1e3,
+            magnet=mock_beamline.magnet,
+            beamsize_measurement=screen_measurement,
+            n_measurement_shots=3,
+            wait_time=1e-3,
+            rmat=rmat,
+            design_twiss=design_twiss,
+            n_iterations=1,
+            max_scan_range=[-10, 10],
+            save_location=".",
+            evaluate_callback=test_callback,  # Set the callback function
+        )
+
+        quad_scan.measure()
+
+        # make sure that the callback is called
+        assert "my_callback_k" in quad_scan.X.data.columns
+        assert "my_callback_x_rms_px" in quad_scan.X.data.columns
+        assert "my_callback_y_rms_px" in quad_scan.X.data.columns
