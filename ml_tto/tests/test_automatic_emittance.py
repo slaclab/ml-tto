@@ -274,7 +274,16 @@ class TestAutomaticEmittance:
 
         # Check if the loaded dictionary is the same as the original
         assert result_dict.keys() == loaded_dict.keys()
-        # TODO: continue test
+
+        # check quad_scan serialization
+        quad_scan_dict = quad_scan.model_dump()
+        quad_scan_saver = H5Saver()
+        quad_scan_saver.dump(quad_scan_dict, "quad_scan_test.h5")
+
+        # Load quad_scan from file
+        loaded_quad_scan_dict = quad_scan_saver.load("quad_scan_test.h5")
+        assert quad_scan_dict.keys() == loaded_quad_scan_dict.keys()
+
 
     def test_evaluate_callback(self):
         initial_beam = ParameterBeam.from_twiss(
