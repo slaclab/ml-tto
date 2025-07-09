@@ -13,7 +13,7 @@ from xopt.generators.bayesian import (
 )
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
 
-from lcls_tools.common.devices.tcav import TCAV
+from tcav import TCAV
 from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement
 
 from scipy.stats import linregress
@@ -23,7 +23,7 @@ class MLTCAVPhasing(BaseModel):
     """Bayesian optimization routine for tuning TCAV phase."""
 
     beamsize_measurement: ScreenBeamProfileMeasurement
-    tcav: TCAV
+    tcav: Any
 
     n_measurement_shots: PositiveInt = 1
     wait_time: PositiveFloat = 2.0
@@ -67,8 +67,8 @@ class MLTCAVPhasing(BaseModel):
         self.X = self.create_xopt_object()
 
         # get origonal values
-        start_amp = self.tcav.amp_set
-        start_phase = self.tcav.phase_set
+        start_amp = self.tcav.amplitude
+        start_phase = self.tcav.phase
 
         if self.verbose:
             print("start amp", start_amp)
@@ -101,14 +101,14 @@ class MLTCAVPhasing(BaseModel):
             if self.verbose:
                 print(f"setting final phase to {final_phase}")
 
-            self.tcav.phase_set = final_phase
+            self.tcav.phase = final_phase
 
         except Exception as e:
-            self.tcav.phase_set = start_phase
+            self.tcav.phase = start_phase
             raise e
 
         finally:
-            self.tcav.amp_set = start_amp
+            self.tcav.amplitude = start_amp
 
     def create_xopt_object(self):
         """Instantiate Xopt optimizer object."""
@@ -141,13 +141,13 @@ class MLTCAVPhasing(BaseModel):
 
     def acquire_nominal_centroid(self) -> float:
         """Get centroid without TCAV streaking influence."""
-        starting_amplitude = self.tcav.amp_set
-        self.tcav.amp_set = 0.0
+        starting_amplitude = self.tcav.amplitude
+        self.tcav.amplitude = 0.0
         time.sleep(self.wait_time)
 
         result = self.beamsize_measurement.measure(self.n_measurement_shots)
 
-        self.tcav.amp_set = starting_amplitude
+        self.tcav.amplitude = starting_amplitude
         time.sleep(self.wait_time)
 
         return result.centroids[0, 0]
@@ -157,7 +157,7 @@ class MLTCAVPhasing(BaseModel):
         if self.verbose:
             pprint.pprint(inputs)
 
-        self.tcav.phase_set = inputs["phase"]
+        self.tcav.phase = inputs["phase"]
         time.sleep(self.wait_time)
 
         if self.verbose:

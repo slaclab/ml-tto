@@ -1,6 +1,6 @@
 from ml_tto.diag0.auto_emittance import run_automatic_emittance
-
 from ml_tto.saver import H5Saver
+import time
 
 
 def run_automatic_6d_measurement(env, save_filename):
@@ -19,20 +19,24 @@ def run_automatic_6d_measurement(env, save_filename):
     env.insert_screen("OTRDG02")
 
     # turn off TCAV
-    env.tcav.amp_set = 0.0
+    env.tcav.amplitude = 0.0
+    time.sleep(5.0)
 
     data = {}
 
     # run automatic emittance measurement with TCAV off
+    print("running OTRDG02 quad scan tcav off")
     emittance_result_OTRDG02_off, _, X = run_automatic_emittance(env, "OTRDG02")
     data["OTRDG02_off"] = emittance_result_OTRDG02_off.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
     }
 
     # turn on TCAV
-    env.tcav.amp_set = env.tcav_on_amp
+    env.tcav.amplitude = env.tcav_on_amp
+    time.sleep(5.0)
 
     # run automatic emittance measurement with TCAV on
+    print("running OTRDG02 quad scan tcav on")
     emittance_result_OTRDG02_on, _, X = run_automatic_emittance(env, "OTRDG02")
     data["OTRDG02_on"] = emittance_result_OTRDG02_on.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
@@ -43,28 +47,32 @@ def run_automatic_6d_measurement(env, save_filename):
     env.insert_screen("OTRDG04")
 
     # turn off TCAV
-    env.tcav.amp_set = 0.0
+    env.tcav.amplitude = 0.0
+    time.sleep(5.0)
 
     # run automatic emittance measurement with TCAV off
+    print("running OTRDG04 quad scan tcav off")
     emittance_result_OTRDG04_off, _, X = run_automatic_emittance(env, "OTRDG04")
     data["OTRDG04_off"] = emittance_result_OTRDG04_off.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
     }
 
     # turn on TCAV
-    env.tcav.amp_set = env.tcav_on_amp
+    env.tcav.amplitude = env.tcav_on_amp
+    time.sleep(5.0)
 
     # run automatic emittance measurement with TCAV on
+    print("running OTRDG04 quad scan tcav on")
     emittance_result_OTRDG04_on, _, X = run_automatic_emittance(env, "OTRDG04")
     data["OTRDG04_on"] = emittance_result_OTRDG04_on.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
     }
 
     # set the tcav amp back to 0.0
-    env.tcav.amp_set = 0.0
+    env.tcav.amplitude = 0.0
 
     # save the results
-    saver = H5Saver(save_filename)
-    saver.save(data)
+    saver = H5Saver()
+    saver.dump(data, save_filename)
 
     return data
