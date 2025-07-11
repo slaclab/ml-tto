@@ -17,6 +17,7 @@ def run_automatic_emittance(env, screen_name):
         env.emittance_config_fname = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG02.yaml"
         env.beamsize_cutoff_max = 5.0
         env.min_beamsize_cutoff = 1000
+        env.create_beamprofile_measurement()
         env._create_emittance_object()
         env._emittance_measurement_object.reset()
         env._emittance_measurement_object.energy = energy
@@ -25,6 +26,7 @@ def run_automatic_emittance(env, screen_name):
         env.emittance_config_fname = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG04.yaml"
         env.beamsize_cutoff_max = 5.0
         env.min_beamsize_cutoff = 1000
+        env.create_beamprofile_measurement()
         env._create_emittance_object()
         env._emittance_measurement_object.reset()
         env._emittance_measurement_object.energy = energy
