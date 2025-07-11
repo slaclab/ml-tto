@@ -14,6 +14,7 @@ def run_automatic_6d_measurement(env, save_filename):
     7. Run automatic emittance measurement with TCAV on.
 
     """
+    saver = H5Saver()
 
     # insert OTRDG02
     env.insert_screen("OTRDG02")
@@ -30,6 +31,8 @@ def run_automatic_6d_measurement(env, save_filename):
     data["OTRDG02_off"] = emittance_result_OTRDG02_off.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
     }
+    # save the results
+    saver.dump(data, save_filename)
 
     # turn on TCAV
     env.tcav.amplitude = env.tcav_on_amp
@@ -41,6 +44,8 @@ def run_automatic_6d_measurement(env, save_filename):
     data["OTRDG02_on"] = emittance_result_OTRDG02_on.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
     }
+    # save the results
+    saver.dump(data, save_filename)
 
     # remove OTRDG02 and insert OTRDG04
     env.remove_screen("OTRDG02")
@@ -56,6 +61,8 @@ def run_automatic_6d_measurement(env, save_filename):
     data["OTRDG04_off"] = emittance_result_OTRDG04_off.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
     }
+    # save the results
+    saver.dump(data, save_filename)
 
     # turn on TCAV
     env.tcav.amplitude = env.tcav_on_amp
@@ -72,7 +79,6 @@ def run_automatic_6d_measurement(env, save_filename):
     env.tcav.amplitude = 0.0
 
     # save the results
-    saver = H5Saver()
     saver.dump(data, save_filename)
 
     return data
