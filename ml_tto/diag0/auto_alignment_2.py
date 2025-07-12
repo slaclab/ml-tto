@@ -36,20 +36,27 @@ def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> d
     return bounds
 
 
-stage_1 = {
-    "corrector_pvs": [f"XCOR:DIAG0:{ele}:BCTRL" for ele in [178, 218, 280, 290, 340]]
-    + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [199, 247, 280, 290, 340]],
-    "bpms": [
-        f"BPMS:DIAG0:{ele}:XSCDTH" for ele in [190, 210, 230, 270, 285, 330, 370, 390]
-    ]
-    + [f"BPMS:DIAG0:{ele}:YSCDTH" for ele in [190, 210, 230, 270, 285, 330, 370, 390]],
-}
-
-stage_2 = {
-    "corrector_pvs": [f"XCOR:DIAG0:{ele}:BCTRL" for ele in [380, 460]]
-    + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [380, 460]],
-    "bpms": [f"BPMS:DIAG0:{ele}:XSCDTH" for ele in [470, 520]]
-    + [f"BPMS:DIAG0:{ele}:YSCDTH" for ele in [470, 520]],
+alignment_pvs = {
+    "OTRDG02": {
+        "corrector_pvs": [
+            f"XCOR:DIAG0:{ele}:BCTRL" for ele in [178, 218, 280, 290, 340]
+        ]
+        + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [199, 247, 280, 290, 340]],
+        "bpms": [
+            f"BPMS:DIAG0:{ele}:XSCDTH"
+            for ele in [190, 210, 230, 270, 285, 330, 370, 390]
+        ]
+        + [
+            f"BPMS:DIAG0:{ele}:YSCDTH"
+            for ele in [190, 210, 230, 270, 285, 330, 370, 390]
+        ],
+    },
+    "OTRDG04": {
+        "corrector_pvs": [f"XCOR:DIAG0:{ele}:BCTRL" for ele in [380, 460]]
+        + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [380, 460]],
+        "bpms": [f"BPMS:DIAG0:{ele}:XSCDTH" for ele in [470, 520]]
+        + [f"BPMS:DIAG0:{ele}:YSCDTH" for ele in [470, 520]],
+    },
 }
 
 
@@ -64,14 +71,8 @@ def run_automatic_alignment(env, to_screen_name="OTRDG04", n_steps=20):
 
     """
     # if just transporting beam to OTRDG02, use all BPMs except 470 and 520
-    if to_screen_name == "OTRDG02":
-        bpm_observables = stage_1["bpms"]
-        pvs = stage_1["corrector_pvs"]
-    elif to_screen_name == "OTRDG04":
-        bpm_observables = stage_2["bpms"]
-        pvs = stage_2["corrector_pvs"]
-    else:
-        raise ValueError("to_screen_name" + to_screen_name + "not found")
+    pvs = alignment_pvs[to_screen_name]["corrector_pvs"]
+    bpm_observables = alignment_pvs[to_screen_name]["bpms"]
 
     temp_vocs = VOCS(variables=env.get_bounds(pvs), observables=[])
     local_region = get_local_region(

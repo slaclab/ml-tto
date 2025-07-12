@@ -17,7 +17,7 @@ def run_automatic_6d_measurement(env, save_filename):
     saver = H5Saver()
 
     # insert OTRDG02
-    env.insert_screen("OTRDG02")
+    env.otrdg02_inserted = True
 
     # turn off TCAV
     env.tcav.amplitude = 0.0
@@ -48,8 +48,8 @@ def run_automatic_6d_measurement(env, save_filename):
     saver.dump(data, save_filename)
 
     # remove OTRDG02 and insert OTRDG04
-    env.remove_screen("OTRDG02")
-    env.insert_screen("OTRDG04")
+    env.otrdg02_inserted = False
+    env.otrdg04_inserted = True
 
     # turn off TCAV
     env.tcav.amplitude = 0.0
