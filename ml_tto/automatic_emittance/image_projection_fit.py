@@ -83,7 +83,6 @@ def process_images(
     threshold: Optional[float] = None,
     threshold_multiplier: float = 1.0,
     n_stds: int = 8,
-    normalization: Literal["independent", "max_intensity_image"] = "independent",
     center_images: bool = False,
     visualize: bool = False,
     return_raw_cropped: bool = False,
@@ -265,20 +264,6 @@ def process_images(
     if pool_size is not None:
         block_size = (1,) * len(batch_shape) + (pool_size,) * 2
         images = block_reduce(images, block_size=block_size, func=np.mean)
-
-    # normalize image intensities
-    if normalization == "independent":
-        # normalize each image independently
-        scale_factor = np.sum(images, axis=(-2, -1), keepdims=True)
-    elif normalization == "max_intensity_image":
-        # normalize by the maximum intensity image
-        scale_factor = np.max(np.sum(images, axis=(-2, -1)))
-    else:
-        raise ValueError(
-            "Normalization must be 'independent' or 'max_intensity_image'."
-        )
-
-    images = images / scale_factor
 
     # compute meshgrids for screens
     bins = []
@@ -519,8 +504,8 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
         for i in range(2):
             if np.isfinite(result.rms_size[i]) and np.isfinite(centroid[i]):
                 # we cropped in this direction so we need to update the fit parameters
-                result.centroid[i] += centroid[i] - crop_widths[i] / 2 + 1.0
-                result.beam_extent[i] += centroid[i] - crop_widths[i] / 2 + 1.0
+                result.centroid[i] += centroid[i] - crop_widths[i] / 2
+                result.beam_extent[i] += centroid[i] - crop_widths[i] / 2
 
         if self.visualize:
             plot_image_projection_fit(result)
