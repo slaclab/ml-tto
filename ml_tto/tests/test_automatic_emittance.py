@@ -1,4 +1,5 @@
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import create_autospec, patch, Mock, MagicMock
+import matplotlib.pyplot as plt
 
 import numpy as np
 import torch
@@ -9,6 +10,7 @@ from lcls_tools.common.devices.screen import Screen
 from lcls_tools.common.frontend.plotting.emittance import plot_quad_scan_result
 from lcls_tools.common.image.roi import CircularROI
 from lcls_tools.common.image.processing import ImageProcessor
+from lcls_tools.common.devices.bpm import BPM
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
@@ -18,7 +20,7 @@ from ml_tto.automatic_emittance.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
 )
-import matplotlib.pyplot as plt
+from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 
 
 class MockBeamline:
@@ -284,7 +286,6 @@ class TestAutomaticEmittance:
         loaded_quad_scan_dict = quad_scan_saver.load("quad_scan_test.h5")
         assert quad_scan_dict.keys() == loaded_quad_scan_dict.keys()
 
-
     def test_evaluate_callback(self):
         initial_beam = ParameterBeam.from_twiss(
             beta_x=torch.tensor(5.0),
@@ -356,3 +357,65 @@ class TestAutomaticEmittance:
         assert "my_callback_k" in quad_scan.X.data.columns
         assert "my_callback_x_rms_px" in quad_scan.X.data.columns
         assert "my_callback_y_rms_px" in quad_scan.X.data.columns
+
+    def test_transmission(self):
+        initial_beam = ParameterBeam.from_twiss(
+            beta_x=torch.tensor(5.0),
+            alpha_x=torch.tensor(5.0),
+            emittance_x=torch.tensor(1e-8),
+            beta_y=torch.tensor(3.0),
+            alpha_y=torch.tensor(3.0),
+            emittance_y=torch.tensor(1e-7),
+        )
+
+        mock_beamline = MockBeamline(initial_beam)
+
+        rmat = np.array([[[1, 1.0], [0, 1]], [[1, 1.0], [0, 1]]])
+        design_twiss = {
+            "beta_x": 0.2452,
+            "alpha_x": -0.1726,
+            "beta_y": 0.5323,
+            "alpha_y": -1.0615,
+        }
+
+        screen = MagicMock(Screen)
+
+        upstream = create_autospec(BPM, instance=True)
+        downstream = create_autospec(BPM, instance=True)
+        upstream.tmit = 10.0
+        downstream.tmit = 5.0
+        transmission_meas = TransmissionMeasurement(
+            upstream_bpm=upstream, downstream_bpm=downstream
+        )
+
+        # create a mock Screen device
+        def mock_get_image(*args):
+            image = np.zeros((100, 100))
+            image[40:60, 40:60] = 255
+            return image
+
+        type(screen).image = property(mock_get_image)
+        screen.resolution = 1.0
+
+        image_processor = ImageProcessor(roi=CircularROI(center=[50, 50], radius=50))
+        screen_measurement = ScreenBeamProfileMeasurement(
+            device=screen,
+            image_processor=image_processor,
+        )
+
+        # Instantiate the QuadScanEmittance object
+        quad_scan = MLQuadScanEmittance(
+            energy=1e9 * 299.792458 / 1e3,
+            magnet=mock_beamline.magnet,
+            beamsize_measurement=screen_measurement,
+            n_measurement_shots=3,
+            wait_time=1e-3,
+            rmat=rmat,
+            design_twiss=design_twiss,
+            n_iterations=1,
+            max_scan_range=[-10, 10],
+            save_location=".",
+            transmission_measurement=transmission_meas,
+        )
+
+        quad_scan.measure()

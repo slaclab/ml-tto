@@ -13,6 +13,7 @@ from pydantic import PositiveInt
 import time
 
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
+from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -45,23 +46,30 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     """
 
-    scan_values: Optional[list[float]] = []
+    # basic settings for the scan
     n_initial_points: PositiveInt = 5
     n_iterations: PositiveInt = 5
     max_scan_range: Optional[list[float]] = [-10.0, 10.0]
-    X: Optional[Xopt] = None
 
+    # visualization settings
+    visualize_bo: bool = False
+    visualize_cropping: bool = False
+    verbose: bool = False
+
+    # more detailed settings for the scan
     min_signal_to_noise_ratio: float = 4.0
     n_interpolate_points: Optional[PositiveInt] = 3
     n_grid_points: PositiveInt = 100
     min_beamsize_cutoff: float = 100.0  # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
-    visualize_bo: bool = False
-    visualize_cropping: bool = False
-    verbose: bool = False
-
     evaluate_callback: Optional[Callable] = None
+    transmission_measurement: Optional[TransmissionMeasurement] = None
+    transmission_measurement_constraint: Optional[float] = 0.9
+
+    # data storage
+    X: Optional[Xopt] = None
+    scan_values: Optional[list[float]] = []
 
     def _evaluate(self, inputs):
         # set quadrupole strength
@@ -110,6 +118,10 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 validated_result.signal_to_noise_ratios
             ),
         }
+
+        # if transmission measurement is set, measure transmission
+        if self.transmission_measurement is not None:
+            results.update(self.transmission_measurement.measure())
 
         if self.evaluate_callback is not None:
             additional_results = self.evaluate_callback(
@@ -232,7 +244,17 @@ class MLQuadScanEmittance(QuadScanEmittance):
         return scan_values_cropped, beam_sizes_cropped
 
     def get_vocs(self, dim_name):
-        """utility function to create x/y vocs"""
+        """
+        Utility function to create x/y vocs.
+
+        This function creates a VOCS object for the given dimension name (x or y).
+        It sets the objectives to minimize the rms beam size in pixel squared for that dimension.
+        It also sets the constraints based on the minimum signal-to-noise ratio
+        and the maximum beam size cutoff based on the smallest beam size measured.
+
+        If a transmission measurement is set, it will also add a transmission constraint to the vocs.
+
+        """
 
         scan_name = f"{dim_name}_rms_px_sq"
         vocs = VOCS(
@@ -253,6 +275,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
                         (self._get_cutoff_beamsize(dim_name)) ** 2,
                     ],
                 }
+
+                if self.transmission_measurement is not None:
+                    vocs.constraints["transmission"] = [
+                        "GREATER_THAN",
+                        self.transmission_measurement_constraint,
+                    ]
 
         return vocs
 
