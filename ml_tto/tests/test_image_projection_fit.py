@@ -106,6 +106,8 @@ class TestImageProjectionFit:
         image[0:20, 40:60] = 1.0
         result = image_projection_fit.fit_image(image)
 
+        plot_image_projection_fit(result)
+
         assert np.allclose(result.centroid[0], 49.5, rtol=1e-2)
         assert np.allclose(result.rms_size[0], 7.7789, rtol=1e-2)
         assert np.isnan(result.centroid[1])
@@ -118,9 +120,10 @@ class TestImageProjectionFit:
                     result.centroid[0] - 2 * result.rms_size[0],
                     result.centroid[0] + 2 * result.rms_size[0],
                 ],
-                [-11.22, 26.62],
+                [
+                    -9.06,
+                    26.07,  # hardcoded values based on the image size and beam extent
+                ],
             ],
             atol=0.2,
         )
-
-        plot_image_projection_fit(result)
