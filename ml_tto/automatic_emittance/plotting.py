@@ -63,3 +63,22 @@ def plot_image_projection_fit(result: ImageProjectionFitResult, n_stds: float = 
         )
 
     return fig, ax
+
+
+def plot_screen_profile_measurement(measurement, n_stds: float = 4.0):
+    """
+    Plot the screen profile measurement result.
+
+    Parameters:
+        measurement (ScreenBeamProfileMeasurement): The screen beam profile measurement object.
+        n_stds (float): Number of standard deviations for bounding box.
+
+    Returns:
+        fig, ax: The figure and axes objects.
+    """
+
+    result = measurement.beam_fit.fit_image(
+        measurement.image_processor.auto_process(measurement.device.image)
+    )
+
+    plot_image_projection_fit(result, n_stds=n_stds)
