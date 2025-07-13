@@ -1,4 +1,5 @@
 import time
+import torch
 import pprint
 from typing import Any, Optional
 from epics import caget
@@ -6,15 +7,17 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt
 from gpytorch.kernels import CosineKernel, ScaleKernel
 from gpytorch.priors import GammaPrior
-
+import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import (
-    ExpectedImprovementGenerator,
+    ExpectedImprovementGenerator, UpperConfidenceBoundGenerator
 )
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
 
-from tcav import TCAV
-from ml_tto.automatic_emittance.screen_profile import ScreenBeamProfileMeasurement
+from lcls_tools.common.devices.tcav import TCAV
+from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
+from lcls_tools.common.devices.bpm import BPM
+from lcls_tools.common.devices.reader import create_bpm
 
 from scipy.stats import linregress
 
@@ -22,20 +25,21 @@ from scipy.stats import linregress
 class MLTCAVPhasing(BaseModel):
     """Bayesian optimization routine for tuning TCAV phase."""
 
-    beamsize_measurement: ScreenBeamProfileMeasurement
     tcav: Any
+    bpm: BPM
+    transmission_measurement: TransmissionMeasurement
 
     n_measurement_shots: PositiveInt = 1
     wait_time: PositiveFloat = 2.0
 
-    n_initial_points: PositiveInt = 10
-    n_iterations: PositiveInt = 5
+    n_initial_points: PositiveInt = 5
+    n_iterations: PositiveInt = 10
 
     X: Optional[Xopt] = None
 
     name: str = "automatic_phase_scan"
     nominal_centroid: Optional[float] = None
-    max_scan_range: list[float] = [0, 180]
+    max_scan_range: list[float] = [50, 150]
 
     verbose: bool = False
 
@@ -77,22 +81,25 @@ class MLTCAVPhasing(BaseModel):
         # run optimization - if an error is raised, reset the scan values
         try:
             # initial coarse scan
-            end_value = (
-                self.max_scan_range[0]
-                if abs(start_phase - self.max_scan_range[0])
-                > abs(start_phase - self.max_scan_range[1])
-                else self.max_scan_range[1]
-            )
             initial_scan_values = np.linspace(
-                start_phase, end_value, self.n_initial_points
+                start_phase*0.9, start_phase*1.1, self.n_initial_points
             )
 
+            # evaluate current point
+            self.X.evaluate_data({"phase": start_phase})
+            if self.X.data.min()["offset"] < 1e-2:
+                print("converged")
+                return self.X
+            
             if self.verbose:
                 print(f"initial scan values: {initial_scan_values}")
             self.X.evaluate_data({"phase": initial_scan_values})
 
             # run optimization
             for i in range(self.n_iterations):
+                if self.X.data.min()["offset"] < 1e-2:
+                    print("converged")
+                
                 if self.verbose:
                     print(f"step:{i}")
                 self.X.step()
@@ -114,28 +121,21 @@ class MLTCAVPhasing(BaseModel):
         """Instantiate Xopt optimizer object."""
         vocs = VOCS(
             variables={"phase": self.max_scan_range},
-            constraints={
-                "min_signal_to_noise": ["GREATER_THAN", 4.0],
-                "offset": ["LESS_THAN", 200**2],
-            },
             objectives={"offset": "MINIMIZE"},
+            constraints={"transmission":["GREATER_THAN", 0.9]}
         )
         evaluator = Evaluator(function=self._evaluate)
 
-        covar_module = {
-            "offset": ScaleKernel(
-                CosineKernel(
-                    period_length_prior=GammaPrior(
-                        1.790, 3.236
-                    )  # mean of ~0.5, +/- 0.25 quantiles
-                )
-            )
-        }
+        class OffsetPrior(torch.nn.Module):
+            def forward(self, X):
+                return 100*torch.ones_like(X).squeeze(dim=-1)
+                
         gp_constructor = StandardModelConstructor(
-            covar_modules=covar_module, use_low_noise_prior=False
+            mean_modules={"offset": OffsetPrior()},
+            use_low_noise_prior=True
         )
-        generator = ExpectedImprovementGenerator(
-            vocs=vocs, gp_constructor=gp_constructor
+        generator = UpperConfidenceBoundGenerator(
+            vocs=vocs, gp_constructor = gp_constructor
         )
         return Xopt(vocs=vocs, evaluator=evaluator, generator=generator)
 
@@ -145,12 +145,12 @@ class MLTCAVPhasing(BaseModel):
         self.tcav.amplitude = 0.0
         time.sleep(self.wait_time)
 
-        result = self.beamsize_measurement.measure(self.n_measurement_shots)
+        result = self.bpm.x
 
         self.tcav.amplitude = starting_amplitude
         time.sleep(self.wait_time)
 
-        return result.centroids[0, 0]
+        return result
 
     def _evaluate(self, inputs: dict[str, Any]) -> dict[str, float]:
         """Evaluate the objective function for Bayesian optimization."""
@@ -163,35 +163,28 @@ class MLTCAVPhasing(BaseModel):
         if self.verbose:
             print(f"TCAV Phase set to {inputs['phase']} degrees")
 
-        # if the beam is not on the screen we run into zero intensity issues
-        try:
-            result = self.beamsize_measurement.measure(self.n_measurement_shots)
-            signal_to_noise_X = result.signal_to_noise_ratios[0, 0]
-            signal_to_noise_Y = result.signal_to_noise_ratios[0, 1]
-            offset = (self.nominal_centroid - result.centroids[0, 0]) ** 2
-            centroid = result.centroids[0, 0]
-
-        except ValueError:
+        transmission = self.transmission_measurement.measure()["transmission"]
+        if transmission > 0.8:
+            offset = (self.nominal_centroid - self.bpm.x) ** 2
+            centroid = self.bpm.x
+        else:
             offset = np.nan
             centroid = np.nan
-            signal_to_noise_X = -10
-            signal_to_noise_Y = -10
 
-        result = {
-            "offset": offset,
-            "min_signal_to_noise": min(signal_to_noise_X, signal_to_noise_Y),
-            "centroid": centroid,
-        }
+        result = {"offset": offset,"centroid": centroid, "transmission": transmission}
 
         return result
 
 
 def run_automatic_tcav_phasing(env):
     tcav = env.tcav
-    profile_measurement = env.create_beamprofile_measurement()
-
+    transmission_measurement = TransmissionMeasurement(
+        upstream_bpm = env.upstream_bpm,
+        downstream_bpm = env.downstream_bpm
+    )
+    
     phaser = MLTCAVPhasing(
-        beamsize_measurement=profile_measurement, tcav=tcav, wait_time=1.0, verbose=True
+        bpm=env.downstream_bpm, tcav=tcav, transmission_measurement=transmission_measurement, wait_time=1.0, verbose=True
     )
 
     phaser.run()
