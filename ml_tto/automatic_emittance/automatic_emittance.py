@@ -1,4 +1,5 @@
 import warnings
+import traceback
 
 import numpy as np
 from xopt import Xopt, Evaluator, VOCS
@@ -66,6 +67,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     evaluate_callback: Optional[Callable] = None
     transmission_measurement: Optional[TransmissionMeasurement] = None
     transmission_measurement_constraint: Optional[float] = 0.9
+    max_measurement_retries: int = 10
 
     # data storage
     X: Optional[Xopt] = None
@@ -76,7 +78,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         if self.verbose:
             print(f"Setting quadrupole strength to {inputs['k']}")
         self.magnet.bctrl = inputs["k"]
-        self.scan_values.append(inputs["k"])
 
         # start by waiting one refesh cycle for bctrl
         # then wait for bact to match bctrl
@@ -88,51 +89,70 @@ class MLQuadScanEmittance(QuadScanEmittance):
         if self.verbose:
             print(f"Quadrupole strength bact is {self.magnet.bact}")
 
-        # make beam size measurement
-        self.measure_beamsize()
-        fit_result = self._info[-1]
+        # try up to `max_measurement_retries` times to make the beamsize measurements
+        for attempt in range(self.max_measurement_retries):
+            try:
+                self.measure_beamsize()
+                fit_result = self._info[-1]
+                self.scan_values.append(inputs["k"])
 
-        # replace last element of info with validated result
-        fit_result.rms_sizes = np.where(
-            fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
-            np.nan,
-            fit_result.rms_sizes,
-        )
-        fit_result.centroids = np.where(
-            fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
-            np.nan,
-            fit_result.centroids,
-        )
+                # if transmission measurement is set, measure transmission
+                extra_measurements = {}
+                if self.transmission_measurement is not None:
+                    extra_measurements.update(self.transmission_measurement.measure())
 
-        validated_result = fit_result
-        self._info[-1] = validated_result
+                if self.evaluate_callback is not None:
+                    additional_results = self.evaluate_callback(
+                        inputs=inputs, fit_result=fit_result
+                    )
+                    extra_measurements.update(additional_results)
 
-        # collect results
-        rms_x = validated_result.rms_sizes[:, 0]
-        rms_y = validated_result.rms_sizes[:, 1]
+                # add extra measurements to fit result metadata
+                fit_result.metadata.update(extra_measurements)
 
-        results = {
-            "x_rms_px_sq": rms_x**2,
-            "y_rms_px_sq": rms_y**2,
-            "min_signal_to_noise_ratio": np.min(
-                validated_result.signal_to_noise_ratios
-            ),
-        }
+                # replace last element of info with validated result
+                fit_result.rms_sizes = np.where(
+                    fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
+                    np.nan,
+                    fit_result.rms_sizes,
+                )
+                fit_result.centroids = np.where(
+                    fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
+                    np.nan,
+                    fit_result.centroids,
+                )
 
-        # if transmission measurement is set, measure transmission
-        if self.transmission_measurement is not None:
-            results.update(self.transmission_measurement.measure())
+                self._info[-1] = fit_result
 
-        if self.evaluate_callback is not None:
-            additional_results = self.evaluate_callback(
-                inputs=inputs, fit_result=validated_result
-            )
-            results.update(additional_results)
+                # collect results
+                rms_x = fit_result.rms_sizes[:, 0]
+                rms_y = fit_result.rms_sizes[:, 1]
 
-        if self.verbose:
-            print(f"Results: {results}")
+                results = {
+                    "x_rms_px_sq": rms_x**2,
+                    "y_rms_px_sq": rms_y**2,
+                    "min_signal_to_noise_ratio": np.min(
+                        fit_result.signal_to_noise_ratios
+                    ),
+                }
+                results.update(extra_measurements)
 
-        return results
+                if self.verbose:
+                    print(f"Results: {results}")
+
+                return results
+            except Exception as e:
+                last_exception = e
+
+                print(
+                    f"There was an issue making the measurement, retrying, attempt {attempt}"
+                )
+                print(traceback.format_exc())
+                if attempt < self.max_measurement_retries - 1:
+                    time.sleep(5.0)
+
+        print("giving up")
+        raise last_exception
 
     def create_xopt_object(self, vocs):
         evaluator = Evaluator(function=self._evaluate)
