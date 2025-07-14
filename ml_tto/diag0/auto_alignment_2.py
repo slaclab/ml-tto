@@ -2,6 +2,7 @@ from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import ExpectedImprovementGenerator
 from xopt.generators.bayesian.objectives import CustomXoptObjective
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
+from botorch.exceptions.errors import OptimizationGradientError
 import numpy as np
 import torch
 from gpytorch.kernels import ScaleKernel, LinearKernel
@@ -43,24 +44,26 @@ alignment_pvs = {
         ]
         + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [199, 247, 280, 290, 340]],
         "bpms": [
-            f"BPMS:DIAG0:{ele}:XSCDTH"
-            for ele in [190, 210, 230, 270, 285, 330, 370, 390]
+            f"BPMS:DIAG0:{ele}:XSCDTH" for ele in [210, 230, 270, 285, 330, 370, 390]
         ]
-        + [
-            f"BPMS:DIAG0:{ele}:YSCDTH"
-            for ele in [190, 210, 230, 270, 285, 330, 370, 390]
-        ],
+        + [f"BPMS:DIAG0:{ele}:YSCDTH" for ele in [210, 230, 270, 285, 330, 370, 390]],
     },
     "OTRDG04": {
-        "corrector_pvs": [f"XCOR:DIAG0:{ele}:BCTRL" for ele in [380, 460]]
-        + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [380, 460]],
-        "bpms": [f"BPMS:DIAG0:{ele}:XSCDTH" for ele in [470, 520]]
-        + [f"BPMS:DIAG0:{ele}:YSCDTH" for ele in [470, 520]],
+        "corrector_pvs": [
+            f"XCOR:DIAG0:{ele}:BCTRL" for ele in [178, 218, 280, 290, 340, 380, 460]
+        ]
+        + [f"YCOR:DIAG0:{ele}:BCTRL" for ele in [199, 247, 280, 290, 340, 380, 460]],
+        "bpms": [
+            f"BPMS:DIAG0:{ele}:XSCDTH" for ele in [270, 285, 330, 370, 390, 470, 520]
+        ]
+        + [f"BPMS:DIAG0:{ele}:YSCDTH" for ele in [270, 285, 330, 370, 390, 470, 520]],
     },
 }
 
 
-def run_automatic_alignment(env, to_screen_name="OTRDG04", n_steps=20):
+def run_automatic_alignment(
+    env, to_screen_name="OTRDG04", n_steps=20, old_data=None, target_value=1.0
+):
     """
     Runs the automatic alignment optimization process on DIAG0 to
     `to_screen_name`.
@@ -138,18 +141,39 @@ def run_automatic_alignment(env, to_screen_name="OTRDG04", n_steps=20):
 
     evaluator = Evaluator(function=eval)
 
-    X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator)
+    X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator, strict=False)
 
+    # evaluate
     X.evaluate_data(env.get_variables(vocs.variables.keys()))
+    if X.data.min()["norm"] < target_value:
+        print("converged")
+        return X
+
     random_sample_region = get_local_region(
         env.get_variables(vocs.variables.keys()), X.vocs, fraction=0.1
     )
-    X.random_evaluate(10, custom_bounds=random_sample_region)
+
+    if old_data is not None:
+        X.add_data(old_data)
+    else:
+        X.random_evaluate(10, custom_bounds=random_sample_region)
 
     try:
         for i in range(n_steps):
             print(i)
-            X.step()
+            if X.data.min()["norm"] < target_value:
+                print("converged")
+                break
+
+            # try running a bo step until we succeed -- max 5 tries
+            for _ in range(5):
+                try:
+                    X.step()
+                    break
+                except OptimizationGradientError:
+                    print("gradient error, adding random evals and then trying again")
+                    X.random_evaluate(1)
+
     except Exception:
         print(traceback.format_exc())
     finally:
