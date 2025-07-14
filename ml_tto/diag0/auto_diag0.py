@@ -1,47 +1,77 @@
 from ml_tto.diag0.auto_6d import run_automatic_6d_measurement
 from ml_tto.diag0.auto_alignment import run_automatic_alignment
 from ml_tto.diag0.auto_tcav_phasing import run_automatic_tcav_phasing
+import yaml
+import time
+import pandas as pd
 
 
 def run_automatic_diag0(env, save_filename):
-    """
-    Runs the automatic diagnostic procedures on DIAG0 for 6D phase space measurement.
+    ## reset the tcav
+    env.tcav.amplitude = 0.0
+    env.tcav.phase = 100.0
 
-    Parameters:
-        env (Environment): The environment in which the measurements are performed.
-        save_filename (str): The filename where the results are saved.
+    reset_vals = env.get_variables(list(env.variables.keys()))
 
-    Returns:
-        dict: A dictionary containing the results of the automatic measurements.
-    """
-
-    # get initial state of the environment
-    initial_state = env.get_variables(env.variables.keys())
-
+    # run alignment
     try:
-        # run automatic alignment to OTRDG04
-        env.tcav.amp_set = 0.0  # turn off the TCAV
-        env.remove_screen("OTRDG02") # remove OTRDG02 screen
+        for i in range(2):
+            ts = time.time()
+            start = time.time()
 
-        alignment_result = run_automatic_alignment(env, to_screen_name="OTRDG04")
+            print(f"starting diag0 measurement at {int(ts)}")
+            env.otrdg02_inserted = False
+            env.otrdg04_inserted = True
 
-        # run automatic TCAV phasing
-        env.tcav.amp_set = env.tcav_on_amp  # ensure TCAV is set to the nominal value before phasing
-        tcav_phasing_result = run_automatic_tcav_phasing(env)
+            print("starting alignment")
+            X = run_automatic_alignment(
+                env, n_steps=20, to_screen_name="OTRDG04", target_value=1.5
+            )
+            X.dump(f"data/alignment_{int(ts)}.yaml")
+            alignment_time = time.time()
+            print(f"alignment time: {alignment_time - start}")
 
-        # run automatic 6D measurement
-        six_d_measurement_result = run_automatic_6d_measurement(env, save_filename)
+            tracking_data = X.data
+            tracking_data["process"] = "alignment"
 
-        # collect results
-        results = {
-            "alignment": alignment_result,
-            "tcav_phasing": tcav_phasing_result,
-            "six_d_measurement": six_d_measurement_result,
-        }
+            # update reset vals
+            reset_vals = env.get_variables(list(env.variables.keys()))
 
-        return results
+            # run tcav phasing
+            print("phasing tcav")
+            env.tcav.amplitude = env.tcav_on_amp
+            X = run_automatic_tcav_phasing(env)
+            phasing_time = time.time()
+            print(f"tcav phasing time: {phasing_time - alignment_time}")
+
+            X.data["process"] = "tcav_phasing"
+            tracking_data = pd.concat([tracking_data, X.data], ignore_index=True)
+
+            # update reset vals
+            reset_vals = env.get_variables(list(env.variables.keys()))
+
+            # run 6d measurement
+            print("starting 6d measurement")
+            _, track_data = run_automatic_6d_measurement(
+                env, f"data/6d_data_{int(ts)}.h5"
+            )
+            gpsr_time = time.time()
+            print(f"gpsr time: {gpsr_time - phasing_time}")
+            print(f"total time: {time.time() - start}")
+
+            track_data["process"] = "gpsr"
+            tracking_data = pd.concat([tracking_data, track_data], ignore_index=True)
+
+            # save top level tracking data
+            with open(f"data/tracking_{int(ts)}.yaml", "w") as file:
+                yaml.dump(tracking_data.to_dict(), file, default_flow_style=False)
+
+            # turn off TCAV
+            env.tcav.amplitude = 0.0
 
     except Exception as e:
-        # restore the initial state if there is an error
-        env.set_variables(initial_state)
+        # reset variables if something goes wrong
+        env.set_variables(reset_vals)
+        env.tcav.amplitude = 0.0
+
         raise e
