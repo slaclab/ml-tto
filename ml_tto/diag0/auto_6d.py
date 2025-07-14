@@ -1,6 +1,7 @@
 from ml_tto.diag0.auto_emittance import run_automatic_emittance
 from ml_tto.saver import H5Saver
 import time
+import pandas as pd
 
 
 def run_automatic_6d_measurement(env, save_filename):
@@ -32,6 +33,7 @@ def run_automatic_6d_measurement(env, save_filename):
         "environment_variables": env.get_variables(env.variables.keys())
     }
     # save the results
+    tracking_data = X.data
     saver.dump(data, save_filename)
 
     # turn on TCAV
@@ -45,6 +47,7 @@ def run_automatic_6d_measurement(env, save_filename):
         "environment_variables": env.get_variables(env.variables.keys())
     }
     # save the results
+    tracking_data = pd.concat([tracking_data, X.data], ignore_index=True)
     saver.dump(data, save_filename)
 
     # remove OTRDG02 and insert OTRDG04
@@ -62,6 +65,7 @@ def run_automatic_6d_measurement(env, save_filename):
         "environment_variables": env.get_variables(env.variables.keys())
     }
     # save the results
+    tracking_data = pd.concat([tracking_data, X.data], ignore_index=True)
     saver.dump(data, save_filename)
 
     # turn on TCAV
@@ -79,6 +83,7 @@ def run_automatic_6d_measurement(env, save_filename):
     env.tcav.amplitude = 0.0
 
     # save the results
+    tracking_data = pd.concat([tracking_data, X.data], ignore_index=True)
     saver.dump(data, save_filename)
 
-    return data
+    return data, tracking_data
