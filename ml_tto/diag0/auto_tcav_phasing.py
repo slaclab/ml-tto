@@ -1,6 +1,7 @@
 import time
 import torch
 import pprint
+import logging
 from typing import Any, Optional, Callable
 from epics import caget
 import numpy as np
@@ -20,6 +21,14 @@ from lcls_tools.common.devices.bpm import BPM
 from lcls_tools.common.devices.reader import create_bpm
 
 from scipy.stats import linregress
+
+# Setup logging
+logger = logging.getLogger("TCAVPhasing")
+handler = logging.StreamHandler()
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 class MLTCAVPhasing(BaseModel):
@@ -51,15 +60,15 @@ class MLTCAVPhasing(BaseModel):
         return float(self.X.vocs.select_best(self.X.data)[2]["phase"])
 
     def run(self):
+        logger.info("Starting TCAV phase optimization....")
         # make sure that the tcav is in accel mode
         if caget(self.tcav.controls_information.control_name + ":MODECFG") != 1:
+            logger.error("TCAV is not in ACCEL model")
             raise RuntimeError("tcav must be in ACCEL mode config")
 
         # acquire the beam posisition without the TCAV on
         self.nominal_centroid = self.acquire_nominal_centroid()
-
-        if self.verbose:
-            print(f"nominal centroid: {self.nominal_centroid}")
+        logger.debug(f"Acquired nominal centroid: {self.nominal_centroid}")
 
         # create xopt object
         self.X = self.create_xopt_object()
@@ -67,10 +76,7 @@ class MLTCAVPhasing(BaseModel):
         # get origonal values
         start_amp = self.tcav.amplitude
         start_phase = self.tcav.phase
-
-        if self.verbose:
-            print("start amp", start_amp)
-            print("start phase", start_phase)
+        logger.info(f"Initial TCAV amplitude: {start_amp}, phase: {start_phase}")
 
         # run optimization - if an error is raised, reset the scan values
         try:
@@ -81,9 +87,7 @@ class MLTCAVPhasing(BaseModel):
 
             # evaluate current point
             self.X.evaluate_data({"phase": start_phase})
-
-            if self.verbose:
-                print(f"initial scan values: {initial_scan_values}")
+            logger.debug(f"Initial scan values: {initial_scan_values}")
 
             # do scan for initialization + TCAV calibration
             self.X.evaluate_data({"phase": initial_scan_values})
@@ -91,27 +95,29 @@ class MLTCAVPhasing(BaseModel):
             # run optimization
             for i in range(self.n_iterations):
                 if self.X.data.min()["offset"] < 1e-2:
-                    print("converged")
+                    logger.info("Converged")
                     break
 
-                if self.verbose:
-                    print(f"step:{i}")
+                logger.debug(f"Optimization step:{i}")
                 self.X.step()
 
             final_phase = float(self.X.vocs.select_best(self.X.data)[2]["phase"])
-            if self.verbose:
-                print(f"setting final phase to {final_phase}")
+            logger.info(f"setting final phase to {final_phase}")
 
             self.tcav.phase = final_phase
 
         except Exception as e:
+            logger.exception("Error during TCAV optimization, resetting to original phase")
             self.tcav.phase = start_phase
             raise e
 
         finally:
             self.tcav.amplitude = start_amp
+            logger.info("Restored original TCAV amplitude.")
+
 
     def create_xopt_object(self):
+        logger.debug("Creating Xopt optimizer object.")
         """Instantiate Xopt optimizer object."""
         vocs = VOCS(
             variables={"phase": self.max_scan_range},
@@ -130,10 +136,12 @@ class MLTCAVPhasing(BaseModel):
         generator = UpperConfidenceBoundGenerator(
             vocs=vocs, gp_constructor=gp_constructor
         )
+        logger.debug("Xopt object created.")
         return Xopt(vocs=vocs, evaluator=evaluator, generator=generator)
 
     def acquire_nominal_centroid(self) -> float:
         """Get centroid without TCAV streaking influence."""
+        logger.info("Acquiring nominal centroid.")
         starting_amplitude = self.tcav.amplitude
         self.tcav.amplitude = 0.0
         time.sleep(self.wait_time)
@@ -143,18 +151,17 @@ class MLTCAVPhasing(BaseModel):
         self.tcav.amplitude = starting_amplitude
         time.sleep(self.wait_time)
 
+        logger.debug(f"Nominal centroid value: {result}")
         return result
 
     def _evaluate(self, inputs: dict[str, Any]) -> dict[str, float]:
         """Evaluate the objective function for Bayesian optimization."""
-        if self.verbose:
-            pprint.pprint(inputs)
+        logger.debug(f"Evaluating input: {inputs}")
 
         self.tcav.phase = inputs["phase"]
         time.sleep(self.wait_time)
 
-        if self.verbose:
-            print(f"TCAV Phase set to {inputs['phase']} degrees")
+        logger.debug(f"TCAV Phase set to {inputs['phase']} degrees")
 
         transmission = self.transmission_measurement.measure()["transmission"]
         if transmission > 0.8:
@@ -163,18 +170,19 @@ class MLTCAVPhasing(BaseModel):
         else:
             offset = np.nan
             centroid = np.nan
+            logger.warning(f"Low transmission ({transmission:.2f}), skipping centroid measurement.")
 
         result = {"offset": offset, "centroid": centroid, "transmission": transmission}
         if self.evaluate_callback is not None:
             result.update(self.evaluate_callback(inputs))
 
+        logger.debug(f"Evaluation result: {result}")
         return result
 
 
 def run_automatic_tcav_phasing(env):
     tcav = env.tcav
-
-    print(f"current tcav phase: {tcav.phase}")
+    logger.info(f"Starting automatic TCAV phasing. Current TCAV phase: {tcav.phase}")
 
     transmission_measurement = TransmissionMeasurement(
         upstream_bpm=env.upstream_bpm, downstream_bpm=env.downstream_bpm
@@ -194,6 +202,6 @@ def run_automatic_tcav_phasing(env):
 
     phaser.run()
 
-    print(f"set new tcav phase to {phaser.optimized_phase}")
+    logger.info(f"Set new TCAV phase to {phaser.optimized_phase}")
 
     return phaser.X
