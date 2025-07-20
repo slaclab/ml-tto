@@ -1,3 +1,7 @@
+import logging 
+
+logger = logging.getLogger("Auto6D")
+
 from ml_tto.diag0.auto_emittance import run_automatic_emittance
 from ml_tto.saver import H5Saver
 import time
@@ -27,7 +31,7 @@ def run_automatic_6d_measurement(env, save_filename):
     data = {}
 
     # run automatic emittance measurement with TCAV off
-    print("running OTRDG02 quad scan tcav off")
+    logger.info("running OTRDG02 quad scan tcav off")
     emittance_result_OTRDG02_off, _, X = run_automatic_emittance(env, "OTRDG02")
     data["OTRDG02_off"] = emittance_result_OTRDG02_off.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
@@ -41,7 +45,7 @@ def run_automatic_6d_measurement(env, save_filename):
     time.sleep(5.0)
 
     # run automatic emittance measurement with TCAV on
-    print("running OTRDG02 quad scan tcav on")
+    logger.info("running OTRDG02 quad scan tcav on")
     emittance_result_OTRDG02_on, _, X = run_automatic_emittance(env, "OTRDG02")
     data["OTRDG02_on"] = emittance_result_OTRDG02_on.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
@@ -59,7 +63,7 @@ def run_automatic_6d_measurement(env, save_filename):
     time.sleep(5.0)
 
     # run automatic emittance measurement with TCAV off
-    print("running OTRDG04 quad scan tcav off")
+    logger.info("running OTRDG04 quad scan tcav off")
     emittance_result_OTRDG04_off, _, X = run_automatic_emittance(env, "OTRDG04")
     data["OTRDG04_off"] = emittance_result_OTRDG04_off.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())
@@ -73,7 +77,7 @@ def run_automatic_6d_measurement(env, save_filename):
     time.sleep(5.0)
 
     # run automatic emittance measurement with TCAV on
-    print("running OTRDG04 quad scan tcav on")
+    logger.info("running OTRDG04 quad scan tcav on")
     emittance_result_OTRDG04_on, _, X = run_automatic_emittance(env, "OTRDG04")
     data["OTRDG04_on"] = emittance_result_OTRDG04_on.model_dump() | {
         "environment_variables": env.get_variables(env.variables.keys())

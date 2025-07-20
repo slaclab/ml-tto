@@ -1,3 +1,8 @@
+import logging
+
+logger = logging.getLogger("AutoEmittance")
+
+
 def run_automatic_emittance(env, screen_name):
     """
     Run automatic emittance measurement using the specified environment and screen name.
@@ -11,6 +16,8 @@ def run_automatic_emittance(env, screen_name):
         fname (str): The filename where the results are saved.
         X: Xopt object from the emittance measurement.
     """
+
+    logger.info(f"Starting automatic emittance measurement on screen: {screen_name}")
     energy = env.get_variables(["BEND:DIAG0:155:BCTRL"])["BEND:DIAG0:155:BCTRL"] * 1e9
 
     if screen_name == "OTRDG02":
@@ -21,6 +28,7 @@ def run_automatic_emittance(env, screen_name):
         env._create_emittance_object()
         env._emittance_measurement_object.reset()
         env._emittance_measurement_object.energy = energy
+        logger.info("Configured environment for OTRDG02")
 
     elif screen_name == "OTRDG04":
         env.emittance_config_fname = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG04.yaml"
@@ -30,6 +38,8 @@ def run_automatic_emittance(env, screen_name):
         env._create_emittance_object()
         env._emittance_measurement_object.reset()
         env._emittance_measurement_object.energy = energy
+        logger.info("Configured environment for OTRDG04")
 
     emittance_result, fname = env.run_emittance_measurement()
+    logger.info(f"Emittance measurement complete. Results saved to: {fname}")
     return emittance_result, fname, env._emittance_measurement_object.X

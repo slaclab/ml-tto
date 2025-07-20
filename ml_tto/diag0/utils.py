@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger("Utils")
+
 import numpy as np
 
 def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
@@ -13,7 +17,11 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
     Returns:
         (np.ndarray, np.ndarray): x_selected, y_selected
     """
+
+    logger.debug(f"Called extract_nearest_to_evenly_spaced_x with {len(x)} points, num_points_each_side={num_points_each_side}")
+
     x_min = x[np.argmin(y)]
+    logger.debug(f"Minimum y at x = {x_min}")
 
     # Determine x boundaries
     x_min_val = np.min(x)
@@ -24,6 +32,8 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
     right_targets = np.linspace(x_min, x_max_val, num_points_each_side+1, endpoint=True)[1:]
 
     targets = np.concatenate([left_targets, [x_min], right_targets])
+    logger.debug(f"Generated {len(targets)} target points around x_min")
+
 
     # Select nearest actual samples to each target
     x_selected = []
@@ -43,5 +53,7 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
     sorted_idx = np.argsort(x_selected)
     x_selected = np.array(x_selected)[sorted_idx]
     y_selected = np.array(y_selected)[sorted_idx]
+
+    logger.debug(f"Selected {len(x_selected)} points nearest to targets")
 
     return x_selected, y_selected

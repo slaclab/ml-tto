@@ -11,11 +11,7 @@ import traceback
 
 # Setup Logging 
 logger = logging.getLogger("AutoAlignment2")
-handler = logging.StreamHandler()
-formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+
 
 def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> dict:
     """
