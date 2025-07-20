@@ -179,7 +179,11 @@ def process_images(
 
         for i in range(images.shape[0]):
             # fit the image centers
-            rms_size, centroid = image_fitter(images[i])
+            try:
+                rms_size, centroid = image_fitter(images[i])
+            except ValueError:
+                rms_size = np.array(images[i].shape)
+                centroid = center_location
 
             # shift the images to center them
             centered_images[i] = scipy.ndimage.shift(
@@ -204,7 +208,11 @@ def process_images(
         plt.imshow(images[(0,) * len(batch_shape)])
 
     total_image = np.mean(images, axis=batch_dims)
-    rms_size, centroid = image_fitter(total_image)
+    try:
+        rms_size, centroid = image_fitter(total_image)
+    except ValueError:
+        rms_size = np.array(total_image.shape)
+        centroid = center_location
     centroid = centroid[::-1]
     rms_size = rms_size[::-1]
 
@@ -483,7 +491,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
     projection_fit: Optional[ProjectionFit] = MLProjectionFit(
         model=MLGaussianModel(use_priors=True), relative_filter_size=0.01
     )
-    initial_filter_size: PositiveInt = 5
+    initial_filter_size: PositiveInt = 3
     visualize: bool = False
 
     def _fit_image(self, image: np.ndarray) -> ImageProjectionFitResult:

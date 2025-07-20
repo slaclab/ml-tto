@@ -7,6 +7,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt
 from gpytorch.kernels import CosineKernel, ScaleKernel
 from gpytorch.priors import GammaPrior
+import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import (
     ExpectedImprovementGenerator,
@@ -39,7 +40,7 @@ class MLTCAVPhasing(BaseModel):
 
     name: str = "automatic_phase_scan"
     nominal_centroid: Optional[float] = None
-    max_scan_range: list[float] = [0, 180]
+    max_scan_range: list[float] = [-180, 180]
     evaluate_callback: Optional[Callable] = None
 
     verbose: bool = False
@@ -76,7 +77,7 @@ class MLTCAVPhasing(BaseModel):
         try:
             # initial coarse scan
             initial_scan_values = np.linspace(
-                start_phase * 0.9, start_phase * 1.1, self.n_initial_points
+                start_phase - 5.0, start_phase + 5.0, self.n_initial_points
             )
 
             # evaluate current point
@@ -118,6 +119,9 @@ class MLTCAVPhasing(BaseModel):
             objectives={"offset": "MINIMIZE"},
             constraints={"transmission": ["GREATER_THAN", 0.9]},
         )
+
+        print(vocs.variables)
+
         evaluator = Evaluator(function=self._evaluate)
 
         class OffsetPrior(torch.nn.Module):

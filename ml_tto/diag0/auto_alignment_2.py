@@ -5,7 +5,7 @@ from xopt.generators.bayesian.models.standard import StandardModelConstructor
 from botorch.exceptions.errors import OptimizationGradientError
 import numpy as np
 import torch
-from gpytorch.kernels import ScaleKernel, LinearKernel
+from gpytorch.kernels import ScaleKernel, PolynomialKernel
 import traceback
 
 
@@ -126,7 +126,21 @@ def run_automatic_alignment(
                 dim=0,
             )
 
-    covar_modules = {name: ScaleKernel(LinearKernel()) for name in bpm_observables}
+    class WeightedPolynomialKernel(PolynomialKernel):
+        has_lengthscale = True
+
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+
+        def forward(self, x1, x2, **params):
+            return super().forward(x1 * self.lengthscale**2, x2, **params)
+
+    covar_modules = {
+        name: ScaleKernel(
+            WeightedPolynomialKernel(power=1, ard_num_dims=vocs.n_variables)
+        )
+        for name in bpm_observables
+    }
     gp_constructor = StandardModelConstructor(
         covar_modules=covar_modules,
     )
@@ -135,7 +149,6 @@ def run_automatic_alignment(
         vocs=vocs,
         custom_objective=MyObjective(vocs),
         gp_constructor=gp_constructor,
-        n_interpolate_points=3,
     )
     generator.numerical_optimizer.max_time = 2.5
 
