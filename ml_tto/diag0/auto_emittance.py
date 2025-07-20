@@ -1,6 +1,6 @@
 import logging
 
-logger = logging.getLogger("AutoEmittance")
+logger = logging.getLogger("auto_emittance")
 
 
 def run_automatic_emittance(env, screen_name):

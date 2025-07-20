@@ -10,7 +10,7 @@ from gpytorch.kernels import ScaleKernel, LinearKernel
 import traceback
 
 # Setup Logging 
-logger = logging.getLogger("AutoAlignment2")
+logger = logging.getLogger("auto_alignment")
 
 
 def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> dict:

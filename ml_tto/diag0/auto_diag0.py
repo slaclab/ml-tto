@@ -1,6 +1,6 @@
 import logging
 
-logger = logging.getLogger("AutoDiag0")
+logger = logging.getLogger("auto_diag0")
 
 from ml_tto.diag0.auto_6d import run_automatic_6d_measurement
 from ml_tto.diag0.auto_alignment import run_automatic_alignment

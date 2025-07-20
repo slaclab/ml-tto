@@ -1,6 +1,6 @@
 import logging 
 
-logger = logging.getLogger("Auto6D")
+logger = logging.getLogger("atuo_6d")
 
 from ml_tto.diag0.auto_emittance import run_automatic_emittance
 from ml_tto.saver import H5Saver

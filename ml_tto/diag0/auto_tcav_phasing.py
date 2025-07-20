@@ -23,7 +23,7 @@ from lcls_tools.common.devices.reader import create_bpm
 from scipy.stats import linregress
 
 # Setup logging
-logger = logging.getLogger("TCAVPhasing")
+logger = logging.getLogger("auto_tcav_phasing")
 
 
 class MLTCAVPhasing(BaseModel):
