@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger("auto_diag0")
+
 from ml_tto.diag0.auto_6d import run_automatic_6d_measurement
 from ml_tto.diag0.auto_alignment import run_automatic_alignment
 from ml_tto.diag0.auto_tcav_phasing import run_automatic_tcav_phasing
@@ -19,17 +23,17 @@ def run_automatic_diag0(env, save_filename):
             ts = time.time()
             start = time.time()
 
-            print(f"starting diag0 measurement at {int(ts)}")
+            logger.info(f"starting diag0 measurement at {int(ts)}")
             env.otrdg02_inserted = False
             env.otrdg04_inserted = True
 
-            print("starting alignment")
+            logger.info("starting alignment")
             X = run_automatic_alignment(
                 env, n_steps=20, to_screen_name="OTRDG04", target_value=1.5
             )
             X.dump(f"data/alignment_{int(ts)}.yaml")
             alignment_time = time.time()
-            print(f"alignment time: {alignment_time - start}")
+            logger.info(f"alignment time: {alignment_time - start}")
 
             tracking_data = X.data
             tracking_data["process"] = "alignment"
@@ -38,11 +42,11 @@ def run_automatic_diag0(env, save_filename):
             reset_vals = env.get_variables(list(env.variables.keys()))
 
             # run tcav phasing
-            print("phasing tcav")
+            logger.info("phasing tcav")
             env.tcav.amplitude = env.tcav_on_amp
             X = run_automatic_tcav_phasing(env)
             phasing_time = time.time()
-            print(f"tcav phasing time: {phasing_time - alignment_time}")
+            logger.info(f"tcav phasing time: {phasing_time - alignment_time}")
 
             X.data["process"] = "tcav_phasing"
             tracking_data = pd.concat([tracking_data, X.data], ignore_index=True)
@@ -51,13 +55,13 @@ def run_automatic_diag0(env, save_filename):
             reset_vals = env.get_variables(list(env.variables.keys()))
 
             # run 6d measurement
-            print("starting 6d measurement")
+            logger.info("starting 6d measurement")
             _, track_data = run_automatic_6d_measurement(
                 env, f"data/6d_data_{int(ts)}.h5"
             )
             gpsr_time = time.time()
-            print(f"gpsr time: {gpsr_time - phasing_time}")
-            print(f"total time: {time.time() - start}")
+            logger.info(f"gpsr time: {gpsr_time - phasing_time}")
+            logger.info(f"total time: {time.time() - start}")
 
             track_data["process"] = "gpsr"
             tracking_data = pd.concat([tracking_data, track_data], ignore_index=True)
@@ -73,5 +77,6 @@ def run_automatic_diag0(env, save_filename):
         # reset variables if something goes wrong
         env.set_variables(reset_vals)
         env.tcav.amplitude = 0.0
+        logger.error(f"Error during diag0 run: {e}", exc_info=True)
 
         raise e

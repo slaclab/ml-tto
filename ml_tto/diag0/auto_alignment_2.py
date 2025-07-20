@@ -1,3 +1,4 @@
+import logging
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import ExpectedImprovementGenerator
 from xopt.generators.bayesian.objectives import CustomXoptObjective
@@ -8,6 +9,9 @@ import torch
 from gpytorch.kernels import ScaleKernel, PolynomialKernel
 import traceback
 
+# Setup Logging 
+logger = logging.getLogger("auto_alignment")
+
 
 def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> dict:
     """
@@ -15,7 +19,9 @@ def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> d
     equal to a fixed fraction of the input space for each variable
 
     """
+    logger.debug("Calculating local region bounds.")
     if not center_point.keys() == set(vocs.variable_names):
+        logger.error("Center point keys must match VOCS variable names")
         raise KeyError("Center point keys must match vocs variable names")
 
     bounds = {}
@@ -34,6 +40,7 @@ def get_local_region(center_point: dict, vocs: VOCS, fraction: float = 0.1) -> d
             ),
         ]
 
+    logger.debug(f"Local region: {bounds}")
     return bounds
 
 
@@ -73,6 +80,7 @@ def run_automatic_alignment(
         to_screen_name (str): The name of the screen to align to. Default is "OTRDG02".
 
     """
+    logger.info(f"Starting automatic alignment for screen: {to_screen_name}")
     # if just transporting beam to OTRDG02, use all BPMs except 470 and 520
     pvs = alignment_pvs[to_screen_name]["corrector_pvs"]
     bpm_observables = alignment_pvs[to_screen_name]["bpms"]
@@ -86,6 +94,7 @@ def run_automatic_alignment(
         try:
             env.set_variables(inputs)
         except RuntimeError:
+            logger.warning("Error while setting variables.")
             # transmission below 0.8
             norm = np.nan
             bpm_signals = {name: np.nan for name in bpm_observables}
@@ -97,6 +106,7 @@ def run_automatic_alignment(
             bpm_signals = env.get_observables(bpm_observables)
             norm = np.linalg.norm([bpm_signals[name] for name in bpm_observables])
         except KeyError:
+            logger.warning("Error while getting observables")
             norm = np.nan
             bpm_signals = {name: np.nan for name in bpm_observables}
 
@@ -156,6 +166,7 @@ def run_automatic_alignment(
 
     X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator, strict=False)
 
+    logger.info("Starting evaluation")
     # evaluate
     X.evaluate_data(env.get_variables(vocs.variables.keys()))
     if X.data.min()["norm"] < target_value:
@@ -167,15 +178,17 @@ def run_automatic_alignment(
     )
 
     if old_data is not None:
+        logger.info("Adding old data.")
         X.add_data(old_data)
     else:
+        logger.info("Generating random points.")
         X.random_evaluate(10, custom_bounds=random_sample_region)
 
     try:
         for i in range(n_steps):
-            print(i)
+            logger.info(f"At step {i}")
             if X.data.min()["norm"] < target_value:
-                print("converged")
+                logger.info("Converged")
                 break
 
             # try running a bo step until we succeed -- max 5 tries
@@ -184,13 +197,14 @@ def run_automatic_alignment(
                     X.step()
                     break
                 except OptimizationGradientError:
-                    print("gradient error, adding random evals and then trying again")
+                    logger.warning("gradient error, adding random evals and then trying again")
                     X.random_evaluate(1)
 
     except Exception:
-        print(traceback.format_exc())
+        logger.error("Exception:")
+        logger.error(traceback.format_exc())
     finally:
-        print("evaluating the best point")
+        logger.info("evaluating the best point")
         X.evaluate(
             X.data[X.vocs.variable_names].iloc[X.data.idxmin()["norm"]].to_dict()
         )
