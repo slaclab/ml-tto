@@ -7,7 +7,7 @@ from numpy import ndarray
 from pydantic import ConfigDict, PositiveFloat, Field, PositiveInt, confloat
 import scipy
 import scipy.ndimage
-import scipy.signal
+import scipy.signal as signal
 from scipy.stats import norm, gamma, uniform
 
 from lcls_tools.common.data.fit.methods import GaussianModel
@@ -15,6 +15,7 @@ from lcls_tools.common.data.fit.projection import ProjectionFit
 from lcls_tools.common.image.fit import ImageProjectionFit, ImageFitResult
 from lcls_tools.common.data.fit.method_base import MethodBase
 from lcls_tools.common.measurements.utils import NDArrayAnnotatedType
+from lcls_tools.common.data.least_squares import gaussian
 
 from lcls_tools.common.data.fit.method_base import (
     ModelParameters,
@@ -519,3 +520,167 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
             plot_image_projection_fit(result)
 
         return result
+
+class MatlabImageProjectionFit(ImageProjectionFit):
+    n_stds: PositiveFloat = Field(
+        8.0, description="Number of standard deviations to use for the bounding box"
+    )
+    projection_fit: Optional[ProjectionFit] = MLProjectionFit(
+        model=MLGaussianModel(use_priors=True), relative_filter_size=0.01
+    )
+    initial_filter_size: PositiveInt = 10
+    visualize: bool = False
+
+    hsig: Optional[float] = 1.5
+    xsig: Optional[list[float]] = [1.5]
+    ysig: Optional[list[float]] = [1.5]
+    crop_flag: Optional[bool] = True
+
+    def _fit_image(self, image: np.ndarray) -> ImageProjectionFitResult:
+        """
+        Fit the image recusrively by cropping the image to the bounding box of the first fit
+        and then refitting the image. This is done to avoid fitting the background noise
+        and to get a more accurate fit of the beam size and location.
+
+        The fit is done in several steps:
+        1. Fit the image to get the initial beam size and location
+        2. If the fit is successful in either direction
+            a. crop the image to the bounding box of the fit
+            b. refit the image to get a more accurate beam size and location
+            c. update the fit parameters to reflect the new image size
+            d. recalculate the noise std and signal to noise ratio
+        3. If the fit is not successful in either direction then return the original image and fit parameters
+
+        """
+        # Fit and subtract background
+        bg, bgs = self.get_bg(image)
+        img_no_bg = image - bg
+
+        # Crop the image (based on gaussian fits of the projections)
+        xsub, ysub, img_cropped = self.get_bb(img_no_bg)
+        crop_widths = []
+        crop_widths[0] = xsub[-1] - xsub[0]
+        crop_widths[1] = ysub[-1] - ysub[0]
+
+        # Filter the image
+        img_filtered = signal.medfilt2d(img_cropped)
+        
+        initial_fit = ImageProjectionFit(signal_to_noise_threshold=0.01)
+        fresult = initial_fit.fit_image(scipy.ndimage.gaussian_filter(image, self.initial_filter_size))
+
+        if self.visualize:
+            plot_image_projection_fit(fresult)
+
+        rms_size = np.array(fresult.rms_size)
+        centroid = np.array(fresult.centroid)
+
+        # if all rms sizes are nan then we can't crop the image
+        if np.all(np.isnan(rms_size)):
+            return fresult
+        
+        # do final fit
+        self.beam_extent_n_stds = 2.0
+        result = super()._fit_image(img_filtered)
+
+        # if the fit along an axis is successful then update the fit parameters
+        for i in range(2):
+            if np.isfinite(result.rms_size[i]) and np.isfinite(centroid[i]):
+                # we cropped in this direction so we need to update the fit parameters
+                result.centroid[i] += centroid[i] - crop_widths[i] / 2 + 0.5
+                result.beam_extent[i] += centroid[i] - crop_widths[i] / 2 + 0.5
+
+        if self.visualize:
+            plot_image_projection_fit(result)
+
+        return result
+    
+    def get_bg(self, img):
+        # Flatten the image
+        pixel_number = img.size
+        pixel_max = 100000
+        if pixel_number > pixel_max:
+            index = np.random.choice(pixel_number, size=pixel_max, replace=False)
+        else:
+            index = np.arange(pixel_number)
+        sampled = img.flat[index]
+
+        # Get bins
+        intensity_max = max(255, np.max(sampled))
+        step = 1
+        if intensity_max > 2**12:
+            step = 2 ** (int(np.log2(intensity_max)) - 12)
+        intensity_min = min(0, np.min(sampled)) - step
+        bin_edges = np.arange(intensity_min - 0.5 * step, intensity_max + 1.5 * step, step)
+
+        # Get histogram of data and bin centers
+        counts, bin_edges = np.histogram(sampled, bins=bin_edges)
+        intens = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+        # Set counts at max and zero intensity to NaN
+        countsf = counts.astype(float)
+        countsf[intens == intensity_max] = np.nan
+        if intensity_min == -step and np.any(countsf[intens == step] > 0):
+            countsf[intens == 0] = np.nan
+
+        # Gaussian fit the intensity distribution, and keep intensities less than mu + hsig*sigma
+        notnan = ~np.isnan(countsf)
+        param_dict, _ = gaussian(intens[notnan], countsf[notnan])
+        param_dict["sigma"] = np.abs(param_dict["sigma"]) # take out these lines once gaussian is fixed
+        use = intens < param_dict["mu"] + self.hsig * param_dict["sigma"]
+        if np.sum(use) > 2:
+            countsf[~use] = np.nan
+
+        # Gaussian fit again
+        param_dict, _ = gaussian(intens[notnan], countsf[notnan])
+        param_dict["sigma"] = np.abs(param_dict["sigma"])
+        bg = param_dict["mu"]
+        bgs = param_dict["sigma"] * self.hsig
+
+        return bg, bgs
+
+    def get_bb(self, img):
+        # Coordinates for x and y axes
+        xcoord = np.arange(img.shape[1])
+        ycoord = np.arange(img.shape[0])
+
+        # Find horizontal beam size and position
+        xprof = signal.medfilt(np.sum(img, axis=0), kernel_size=5)  # Filter noise
+        parx, xf = gaussian(xcoord, xprof)          # Fit Gaussian
+        parx["sigma"] = np.abs(parx["sigma"])
+        xsub = xcoord[np.abs(xcoord - parx["mu"]) <= 3 * parx["sigma"]]  # Crop to ± 3 sigma
+
+        # Find vertical beam size and position
+        yprof = signal.medfilt(np.sum(img[:, xsub], axis=1), kernel_size=5)  # Filter noise and crop
+        pary, yf = gaussian(ycoord, yprof)                   # Fit Gaussian
+        pary["sigma"] = np.abs(pary["sigma"])
+        lim = self.ysig[0] * pary["sigma"]  # Crop to ± ysig * sigma
+        if self.ysig[0] < 0:
+            lim = np.abs(self.ysig[0])
+        ysub = ycoord[np.abs(ycoord - pary["mu"]) <= lim]
+        if len(self.ysig) > 1:
+            ysub = np.arange(self.ysig[0], self.ysig[1] + 1)  # Crop ysig_1 to ysig_2
+
+        # Refine horizontal beam size and position
+        xprof = signal.medfilt(np.sum(img[ysub, :], axis=0), kernel_size=5)  # Crop and filter noise
+        parx, xf = gaussian(xcoord, xprof)  # Fit Gaussian
+        parx["sigma"] = np.abs(parx["sigma"])
+        lim = self.xsig[0] * parx["sigma"]  # Crop to ± xsig * sigma
+        if self.xsig[0] < 0:
+            lim = np.abs(self.xsig[0])
+        xsub = xcoord[np.abs(xcoord - parx["mu"]) <= lim]
+        if len(self.xsig) > 1:
+            xsub = np.arange(self.xsig[0], self.xsig[1] + 1)  # Crop xsig_1 to xsig_2
+
+        # Discard bounding box if too small
+        if len(xsub) < 3 or not self.crop_flag:
+            xsub = xcoord
+        if len(ysub) < 3 or not self.crop_flag:
+            ysub = ycoord
+
+        # Crop image if needed
+        if self.crop_flag:
+            imgsub = img[ysub, xsub]
+        else:
+            imgsub = img
+
+        return xsub, ysub, imgsub
