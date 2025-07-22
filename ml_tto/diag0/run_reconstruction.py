@@ -1,3 +1,4 @@
+import argparse
 import sys
 import logging
 
@@ -229,3 +230,28 @@ def run_reconstruction(dataset, diag0_lattice_file, dump_location):
         fig.set_size_inches(10, 3)
         fig.tight_layout()
         fig.savefig(os.path.join(dump_location, f"otrdg0{2 * (j + 1)}_predictions.png"))
+
+
+def main():
+    logging.info("Entering code")
+    parser = argparse.ArgumentParser(description="6D reconstruction for DIAG0")
+    parser.add_argument(
+        "--dump_location", type=str, help="path to dump directory", required=True
+    )
+    parser.add_argument(
+        "--diag0_lattice_file",
+        type=str,
+        help="path to diag0 lattice file",
+        required=True,
+    )
+    parser.add_argument("--processed_data", type=str, help="processed data")
+    args = parser.parse_args()
+
+    dataset = torch.load(args.processed_data, weights_only=False)
+
+    # do reconstruction
+    run_reconstruction(dataset, args.diag0_lattice_file, args.dump_location)
+
+
+if __name__ == "__main__":
+    main()
