@@ -1,0 +1,11 @@
+N_particles: 50000
+n_hidden: 1
+hidden_width: 10
+output_scale: .0001
+dropout: 0.0
+batch_size: 100
+max_epochs: 1000
+p0c: 1.0e9
+learning_rate: 0.01
+checkpoint_period_epochs: 100
+
