@@ -25,6 +25,7 @@ dependencies = [
     "scikit-learn",
     "xopt",
     "cheetah-accelerator",
+    "scikit-image",
     "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git"
 ]
 description = "Tools to support high level application development at LCLS using Python"
