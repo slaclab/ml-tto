@@ -32,8 +32,9 @@ class RMatLattice(GPSRLattice):
         Parameters
         ----------
         rmat: torch.Tensor
-            The 6D transfer matrix (cheetah coordinate system) from the reconstruction location to the diagnostic screen.
-            Should have the shape (B, 6, 6) where B is the batch size corresponding to the number of measurements
+            The 6D transfer matrix (cheetah coordinate system) from the reconstruction location
+            to the diagnostic screen. Should have the shape (B, 6, 6) where B is the batch size
+            corresponding to the number of measurements
         screen: Screen
             The cheetah screen object for measurements.
         fit_threshold: bool
@@ -228,10 +229,10 @@ def gpsr_fit_matlab(
         resolution,
         n_epochs,
         beam_fraction,
-        matlab_data["design_twiss"],
-        visualize,
-        save_location,
-        save_name,
+        design_twiss=matlab_data["design_twiss"],
+        visualize=visualize,
+        save_location=save_location,
+        save_name=save_name,
     )
 
 
@@ -362,7 +363,7 @@ class MetricTracker(L.Callback):
         self.training_loss = []
 
     def on_train_epoch_end(self, trainer, pl_module):
-        self.training_loss.append(trainer.callback_metrics["train_loss"].item())
+        self.training_loss.append(trainer.callback_metrics["loss"].item())
 
 
 def gpsr_fit_quad_scan(
@@ -384,16 +385,20 @@ def gpsr_fit_quad_scan(
     """
     Basic method for using GPSR to fit quadrupole scan data.
 
-    This method uses a transformer neural network to fit the quadrupole scan data and extract the relevant beam parameters for online control.
+    This method uses a transformer neural network to fit the quadrupole scan data and
+    extract the relevant beam parameters for online control.
 
     The following hyperparameters can have a significant impact on the reconstruction speed and quality:
-    - n_epochs: Number of training epochs. Increasing the number of epochs can improve the fit but also increases computation time.
-        See diagnostic plots to verify the convergence.
-    - output_scale: Scale of the output beam distribution (should approximate the size of the beam in phase space).
-    - n_layers: Number of layers in the transformer neural network. Increasing the number of layers can (exponentially) improve the model's capacity to learn
-        complex patterns but also increases the number of epochs required for training.
-    - layer_width: Width of the layers in the transformer neural network. Increasing the layer width can (linearly) improve the model's ability to learn complex
-        patterns but also increases the number of epochs required for training.
+    - n_epochs: Number of training epochs. Increasing the number of epochs can improve the fit but
+        also increases computation time. See diagnostic plots to verify the convergence.
+    - output_scale: Scale of the output beam distribution (should approximate the size of the beam
+        in phase space).
+    - n_layers: Number of layers in the transformer neural network. Increasing the number of layers can
+        (exponentially) improve the model's capacity to learn complex patterns but also increases the
+        number of epochs required for training.
+    - layer_width: Width of the layers in the transformer neural network. Increasing the layer width can
+        (linearly) improve the model's ability to learn complex patterns but also increases the number of
+        epochs required for training.
 
     Make sure to visualize and monitor diagnostic plots to verify the convergence.
 
@@ -406,7 +411,8 @@ def gpsr_fit_quad_scan(
     energy: float
         Energy of the beam in eV
     rmat: np.ndarray
-        6D transfer matrix (cheetah coordinate system) from the reconstruction location to the diagnostic screen
+        6D transfer matrix (cheetah coordinate system) from the reconstruction location to the
+        diagnostic screen
     resolution: float
         Pixel size of the diagnostic screen in meters.
     n_epochs: int, optional
@@ -432,14 +438,16 @@ def gpsr_fit_quad_scan(
     Returns
     -------
     dict
-        A dictionary containing the results of the fitting process. The dictionary has the following elements
+        A dictionary containing the results of the fitting process.
+        The dictionary has the following elements
         - norm_emit_x: Normalized emittance along x in m.rad
         - norm_emit_y: Normalized emittance along y in m.rad
         - beta_x: Beta function along x in m
         - beta_y: Beta function along y in m
         - alpha_x: Alpha function along x
         - alpha_y: Alpha function along y
-        - screen_distribution: The distribution of the beam at the screen for each quadrupole focusing strength
+        - screen_distribution: The distribution of the beam at the screen for each
+            quadrupole focusing strength
         - twiss_at_screen: The Twiss parameters at the screen for each quadrupole focusing strength
         - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
         - sigma_matrix: The covariance matrix of the reconstructed beam
@@ -469,12 +477,7 @@ def gpsr_fit_quad_scan(
         screen,
     )
 
-    ## Reconstruction hyperparameters
     learning_rate = 1e-2  # learning rate of the optimizer
-
-    # scale of the output beam distribution
-    # (should be smaller than the scale size of the beam,
-    # for example reconstructing a beam of ~ 100 um size requires a scale of 1e-4)
 
     # create training model
     R = torch.eye(7).repeat(len(rmat), 1, 1)
@@ -488,8 +491,8 @@ def gpsr_fit_quad_scan(
             50000,
             p0c,
             transformer=NNTransform(
-                n_layers,
-                layer_width,
+                n_hidden=n_layers,
+                width=layer_width,
                 output_scale=output_scale,
                 phase_space_dim=4,
                 activation=CustomLeakyReLU(),
@@ -521,16 +524,10 @@ def gpsr_fit_quad_scan(
     # grab a fraction of the beam for emittance / twiss calculations
     # if the cholesky factorization fails then return the full beam
     if beam_fraction < 1.0:
-        try:
-            fractional_beam = get_beam_fraction_bmadx_particle(
-                reconstructed_beam, beam_fraction
-            )
-        except torch._C._LinAlgError as e:
-            warnings.warn(
-                f"A numerical stability issue (LinAlgError) was encountered:{e}, returning full beam",
-                UserWarning,
-            )
-            fractional_beam = reconstructed_beam
+        fractional_beam = get_beam_fraction_bmadx_particle(
+            reconstructed_beam, beam_fraction
+        )
+
     else:
         fractional_beam = reconstructed_beam
 
