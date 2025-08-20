@@ -1,0 +1,580 @@
+import warnings
+from typing import Tuple
+import torch
+import os
+import matlab_parser
+import numpy as np
+import matplotlib.pyplot as plt
+from lcls_tools.common.data.model_general_calcs import bmag
+
+from gpsr.modeling import GPSR, GPSRLattice
+from gpsr.train import LitGPSR
+from gpsr.beams import NNParticleBeamGeneratorND, NNTransform
+from gpsr.datasets import QuadScanDataset
+from gpsr.data_processing import process_images
+from cheetah.accelerator import Screen
+from cheetah.particles import ParticleBeam
+from cheetah.accelerator import CustomTransferMap, Segment
+
+import lightning as L
+import time
+
+
+class RMatLattice(GPSRLattice):
+    """
+    GPSR lattice that uses a transfer matrix to propagate the beam and a single screen to observe the beam.
+    """
+
+    def __init__(self, rmat, screen, fit_threshold=False):
+        """
+        Initializes the RMatLattice with a transfer matrix and a screen.
+
+        Parameters
+        ----------
+        rmat: torch.Tensor
+            The 6D transfer matrix (cheetah coordinate system) from the reconstruction location to the diagnostic screen.
+            Should have the shape (B, 6, 6) where B is the batch size corresponding to the number of measurements
+        screen: Screen
+            The cheetah screen object for measurements.
+        fit_threshold: bool
+            Whether to fit the threshold parameter which clips the lower intensity of the beam image.
+
+        """
+        super().__init__()
+        self.fit_threshold = fit_threshold
+
+        if self.fit_threshold:
+            self.register_parameter(
+                "threshold", torch.nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+            )
+        self.lattice = Segment(
+            [
+                CustomTransferMap(rmat),
+                screen,
+            ]
+        )
+
+    def set_lattice_parameters(self, x: torch.Tensor) -> None:
+        pass
+
+    def track_and_observe(self, beam) -> Tuple[torch.Tensor, ...]:
+        """
+        tracks beam through the lattice and returns observations
+
+        Returns
+        -------
+        results: Tuple[Tensor]
+            Tuple of results from each measurement path
+        """
+        self.lattice.elements[-1].pixel_size = self.lattice.elements[-1].pixel_size.to(
+            beam.x
+        )
+        beam.particle_charges = torch.ones_like(beam.x).to(device=beam.x.device)
+        self.lattice.track(beam)
+
+        observations = self.lattice.elements[-1].reading.transpose(-1, -2)
+
+        # clip observations
+        if self.fit_threshold:
+            observations = torch.clip(observations - self.threshold * 1e-3, 0, None)
+
+        return tuple(observations.unsqueeze(0))
+
+
+def get_beam_fraction_bmadx_particle(beam_distribution, beam_fraction):
+    """
+    Get the core of the beam according to 6D normalized beam coordinates.
+    Particles from the beam distribution are scaled to normalized coordinates
+    via the covariance matrix. Then they are sorted by distance from the origin.
+
+    Parameters
+    ----------
+    beam_distribution: ParticleBeam
+        Cheetah ParticleBeam object representing the beam distribution.
+    beam_fraction: float
+        The fraction of the beam to keep from 0 - 1.
+
+    Returns
+    -------
+    ParticleBeam
+        The core of the beam represented as a Cheetah ParticleBeam object.
+
+    """
+    # extract macroparticles
+    data = beam_distribution.particles.detach()[..., :6]
+
+    # calculate covariance matrix
+    cov = torch.cov(data.T)
+
+    # get inverse cholesky decomp -- if it fails, add a small value to the
+    # diagonal and try again
+    try:
+        cov_cholesky = torch.linalg.cholesky(cov)
+    except torch._C._LinAlgError as e:
+        cov_cholesky = torch.linalg.cholesky(cov + 1e-8 * torch.eye(6))
+
+    # transform particles to normalized coordinates
+    t_data = (torch.linalg.inv(cov_cholesky) @ data.T).T
+
+    # sort particles by their distance from the origin and hold onto a fraction of them
+    J = torch.linalg.norm(t_data, axis=1)
+    sort_idx = torch.argsort(J)
+    frac_coords = data[sort_idx][: int(len(data) * beam_fraction)]
+    frac_coords = torch.hstack((frac_coords, torch.ones((len(frac_coords), 1))))
+
+    # create a beam distribution to return
+    frac_particle = ParticleBeam(
+        frac_coords.to(beam_distribution.energy),
+        energy=beam_distribution.energy,
+    )
+
+    return frac_particle
+
+
+def get_matlab_data(fname):
+    """
+    Load data from LCLS/LCLS-II Matlab emittance measurement.
+
+    Parameters
+    ----------
+    fname: str
+        The path to the .mat file.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the loaded data.
+    """
+    data = matlab_parser.loadmat(fname)
+
+    # get parameters
+    quad_strengths = data["data"]["quadVal"]
+    energy = data["data"]["energy"] * 1e9
+    rmat = torch.tensor(np.array(data["data"]["rMatrix"]))
+    resolution = data["data"]["dataList"][0]["res"][0] * 1e-6
+
+    # get images from matlab and pre-process the images
+    images = []
+    for ele in data["data"]["dataList"]:
+        images += [np.array(ele["img"])]
+    images = np.stack(images).transpose(0, 1, -1, -2)
+
+    # get the design twiss
+    design_twiss = [
+        *data["data"]["twiss0"].T[0][1:],
+        *data["data"]["twiss0"].T[1][1:],
+    ]
+
+    return {
+        "quad_strengths": quad_strengths,
+        "energy": energy,
+        "rmat": rmat,
+        "resolution": resolution,
+        "images": images,
+        "design_twiss": design_twiss,
+    }
+
+
+def gpsr_fit_matlab(
+    fname: str,
+    n_epochs: int = 500,
+    beam_fraction: float = 1.0,
+    pool_size: int = 1,
+    save_location: str = None,
+    visualize: bool = False,
+):
+    """
+    Use GPSR to fit the beam distribution from Matlab emittance measurements taken at LCLS/LCLS-II.
+
+    Parameters
+    ----------
+    fname: str
+        The path to the .mat file.
+    n_epochs: int
+        The number of training epochs.
+    pool_size: int, optional
+        Size of pooling layer to compress images to smaller sizes for speeding up GPSR fitting.
+    save_location: str, optional
+        The location to save diagnostic plots.
+    beam_fraction: float, optional
+        The core fraction of the beam to use for fitting. See `get_core_beam` for more information.
+    visualize: bool, optional
+        Whether to visualize the diagnostic plots.
+
+    """
+
+    matlab_data = get_matlab_data(fname)
+    resolution = matlab_data["resolution"]
+    images = matlab_data["images"]
+
+    # process images by centering, cropping, and normalizing
+    results = process_images(
+        images,
+        resolution * 1e6,
+        crop=True,
+        n_stds=4,
+        pool_size=pool_size,
+    )
+    resolution *= pool_size
+    final_images = np.mean(results["images"], axis=1)
+
+    save_name = os.path.split(fname)[-1].split(".")[0] + "_gpsr_prediction"
+
+    return gpsr_fit_quad_scan(
+        matlab_data["quad_strengths"],
+        final_images,
+        matlab_data["energy"],
+        matlab_data["rmat"],
+        resolution,
+        n_epochs,
+        beam_fraction,
+        matlab_data["design_twiss"],
+        visualize,
+        save_location,
+        save_name,
+    )
+
+
+def qpsr_fit_lcls_tools():
+    pass
+
+
+class CustomLeakyReLU(torch.nn.Module):
+    def forward(self, x):
+        return 2 * torch.nn.LeakyReLU(negative_slope=0.1)(x)
+
+
+def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
+    """
+    Compute second order moment related statistics of the reconstructed beam distribution
+
+    Parameters
+    ----------
+    reconstructed_beam: Beam
+        The reconstructed beam object.
+    gpsr_model: GPSRModel
+        The GPSR model used for the reconstruction.
+    design_twiss: list, optional
+        The design Twiss parameters. Should have the form [beta_x, alpha_x, beta_y, alpha_y].
+
+    Returns
+    -------
+    dict
+        A dictionary containing the computed beam statistics. The dictionary has the following elements
+        - norm_emit_x: Normalized emittance along x in m.rad
+        - norm_emit_y: Normalized emittance along y in m.rad
+        - beta_x: Beta function along x in m
+        - beta_y: Beta function along y in m
+        - alpha_x: Alpha function along x
+        - alpha_y: Alpha function along y
+        - screen_distribution: The distribution of the beam at the screen for each quadrupole focusing strength
+        - twiss_at_screen: The Twiss parameters at the screen for each quadrupole focusing strength
+        - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
+        - sigma_matrix: The covariance matrix of the reconstructed beam
+        - bmag: The bmag matching parameter for each quadrupole focusing strength
+
+    """
+
+    # track the reconstructed beam to the screen
+    final_beam = gpsr_model.lattice.lattice.track(reconstructed_beam)
+
+    # compute the twiss functions
+    twiss_at_screen = [
+        torch.stack(
+            (
+                final_beam.beta_x,
+                final_beam.alpha_x,
+                (1 + final_beam.alpha_x**2) / final_beam.beta_x,
+            )
+        )
+        .detach()
+        .numpy(),
+        torch.stack(
+            (
+                final_beam.beta_y,
+                final_beam.alpha_y,
+                (1 + final_beam.alpha_y**2) / final_beam.beta_y,
+            )
+        )
+        .detach()
+        .numpy(),
+    ]
+
+    if design_twiss is not None:
+        bmag_val = bmag(
+            [
+                final_beam.beta_x.detach().numpy(),
+                final_beam.alpha_x.detach().numpy(),
+                final_beam.beta_y.detach().numpy(),
+                final_beam.alpha_y.detach().numpy(),
+            ],
+            design_twiss,
+        )
+
+    # compute the rms sizes
+    rms_sizes = [
+        final_beam.sigma_x.detach().numpy(),
+        final_beam.sigma_y.detach().numpy(),
+    ]
+
+    # compute sigma matricies at each point
+    cov = torch.cov(reconstructed_beam.particles.T)
+    sigma_matrix = (
+        torch.stack(
+            (
+                torch.triu(cov[:2, :2]).flatten()[
+                    torch.triu(cov[:2, :2]).flatten() != 0
+                ],
+                torch.triu(cov[2:4, 2:4]).flatten()[
+                    torch.triu(cov[2:4, 2:4]).flatten() != 0
+                ],
+            )
+        )
+        .detach()
+        .numpy()
+    )
+
+    results = {
+        "norm_emit_x": reconstructed_beam.emittance_x
+        * reconstructed_beam.energy
+        / 0.511e6,
+        "norm_emit_y": reconstructed_beam.emittance_y
+        * reconstructed_beam.energy
+        / 0.511e6,
+        "beta_x": reconstructed_beam.beta_x,
+        "beta_y": reconstructed_beam.beta_y,
+        "alpha_x": reconstructed_beam.alpha_x,
+        "alpha_y": reconstructed_beam.alpha_y,
+        "screen_distribution": final_beam,
+        "twiss_at_screen": twiss_at_screen,
+        "rms_sizes": rms_sizes,
+        "sigma_matrix": sigma_matrix,
+    }
+
+    if design_twiss is not None:
+        results["bmag"] = bmag_val
+
+    return results
+
+
+class MetricTracker(L.Callback):
+    def __init__(self):
+        self.training_loss = []
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        self.training_loss.append(trainer.callback_metrics["train_loss"].item())
+
+
+def gpsr_fit_quad_scan(
+    quad_strengths,
+    images,
+    energy,
+    rmat,
+    resolution,
+    n_epochs=500,
+    beam_fraction=1.0,
+    output_scale=1e-4,
+    n_layers=5,
+    layer_width=20,
+    design_twiss=None,
+    visualize=False,
+    save_location=None,
+    save_name=None,
+):
+    """
+    Basic method for using GPSR to fit quadrupole scan data.
+
+    This method uses a transformer neural network to fit the quadrupole scan data and extract the relevant beam parameters for online control.
+
+    The following hyperparameters can have a significant impact on the reconstruction speed and quality:
+    - n_epochs: Number of training epochs. Increasing the number of epochs can improve the fit but also increases computation time.
+        See diagnostic plots to verify the convergence.
+    - output_scale: Scale of the output beam distribution (should approximate the size of the beam in phase space).
+    - n_layers: Number of layers in the transformer neural network. Increasing the number of layers can (exponentially) improve the model's capacity to learn
+        complex patterns but also increases the number of epochs required for training.
+    - layer_width: Width of the layers in the transformer neural network. Increasing the layer width can (linearly) improve the model's ability to learn complex
+        patterns but also increases the number of epochs required for training.
+
+    Make sure to visualize and monitor diagnostic plots to verify the convergence.
+
+    Parameters
+    ----------
+    quad_strengths: list
+        Geometric focusing strengths of quadrupole for each image in m^(-2)
+    images: np.ndarray
+        Array of images to fit (shape: num_images x height x width)
+    energy: float
+        Energy of the beam in eV
+    rmat: np.ndarray
+        6D transfer matrix (cheetah coordinate system) from the reconstruction location to the diagnostic screen
+    resolution: float
+        Pixel size of the diagnostic screen in meters.
+    n_epochs: int, optional
+        Number of training epochs.
+    output_scale: float, optional
+        Scale of the output beam distribution (should approximate the size of the beam in phase space).
+    n_layers: int, optional
+        Number of layers in the transformer neural network.
+    layer_width: int, optional
+        Width of the layers in the transformer neural network.
+    beam_fraction: float, optional
+        Fraction of the beam to use for measuring the rms parameters (between 0 and 1).
+        Defaults to 1.0.
+    design_twiss: list, optional
+        The design Twiss parameters. Should have the form [beta_x, alpha_x, beta_y, alpha_y].
+    visualize: bool, optional
+        Whether to visualize diagnostic plots.
+    save_location: str, optional
+        Location to save diagnostic plots.
+    save_name: str, optional
+        Name to use for saving the diagnostic plots.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the results of the fitting process. The dictionary has the following elements
+        - norm_emit_x: Normalized emittance along x in m.rad
+        - norm_emit_y: Normalized emittance along y in m.rad
+        - beta_x: Beta function along x in m
+        - beta_y: Beta function along y in m
+        - alpha_x: Alpha function along x
+        - alpha_y: Alpha function along y
+        - screen_distribution: The distribution of the beam at the screen for each quadrupole focusing strength
+        - twiss_at_screen: The Twiss parameters at the screen for each quadrupole focusing strength
+        - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
+        - sigma_matrix: The covariance matrix of the reconstructed beam
+        - bmag: The bmag matching parameter for each quadrupole focusing strength
+        - reconstructed_distribution: The beam distribution at the reconstruction location.
+        - fractional_distribution: The fractional distribution of the beam at the reconstruction location.
+        - gpsr_model: The GPSR model used for the fitting process.
+        - training_dataset: The training dataset used for the fitting process.
+        - prediction_dataset: The predicted dataset from the reconstruction.
+
+    """
+
+    # create cheetah screen diagnostic
+    screen = Screen(
+        name="screen",
+        resolution=images.shape[1:],
+        pixel_size=torch.ones(2) * resolution,
+        method="kde",
+        kde_bandwidth=torch.tensor(resolution, dtype=torch.float32),
+        is_active=True,
+    )
+
+    # combine into dataset
+    train_dset = QuadScanDataset(
+        torch.tensor(quad_strengths, dtype=torch.float32).unsqueeze(-1),
+        torch.tensor(images, dtype=torch.float32) + 1e-8,
+        screen,
+    )
+
+    ## Reconstruction hyperparameters
+    learning_rate = 1e-2  # learning rate of the optimizer
+
+    # scale of the output beam distribution
+    # (should be smaller than the scale size of the beam,
+    # for example reconstructing a beam of ~ 100 um size requires a scale of 1e-4)
+
+    # create training model
+    R = torch.eye(7).repeat(len(rmat), 1, 1)
+    R[:, :6, :6] = rmat
+
+    gpsr_lattice = RMatLattice(R.to(dtype=torch.float32), screen)
+
+    p0c = torch.tensor(energy).to(dtype=torch.float32)
+    gpsr_model = GPSR(
+        NNParticleBeamGeneratorND(
+            50000,
+            p0c,
+            transformer=NNTransform(
+                n_layers,
+                layer_width,
+                output_scale=output_scale,
+                phase_space_dim=4,
+                activation=CustomLeakyReLU(),
+            ),
+            n_dim=4,
+        ),
+        gpsr_lattice,
+    )
+    train_loader = torch.utils.data.DataLoader(train_dset, batch_size=100)
+
+    litgpsr = LitGPSR(gpsr_model, lr=learning_rate)
+
+    # create a pytorch lightning trainer
+    cb = MetricTracker()
+    trainer = L.Trainer(limit_train_batches=100, max_epochs=n_epochs, callbacks=[cb])
+
+    # run the training
+    start = time.time()
+    trainer.fit(model=litgpsr, train_dataloaders=train_loader)
+    print(time.time() - start)
+
+    # get the reconstructed beam distribution
+    reconstructed_beam = litgpsr.gpsr_model.beam_generator()
+
+    # predict the measurements to compare with training data
+    pred = gpsr_model(train_dset.parameters)[0].detach()
+    pred_dset = QuadScanDataset(train_dset.parameters, pred, screen)
+
+    # grab a fraction of the beam for emittance / twiss calculations
+    # if the cholesky factorization fails then return the full beam
+    if beam_fraction < 1.0:
+        try:
+            fractional_beam = get_beam_fraction_bmadx_particle(
+                reconstructed_beam, beam_fraction
+            )
+        except torch._C._LinAlgError as e:
+            warnings.warn(
+                f"A numerical stability issue (LinAlgError) was encountered:{e}, returning full beam",
+                UserWarning,
+            )
+            fractional_beam = reconstructed_beam
+    else:
+        fractional_beam = reconstructed_beam
+
+    # get the reconstructed beam emittances and twiss parameters
+    results = get_beam_stats(fractional_beam, gpsr_model, design_twiss)
+
+    if visualize or save_location is not None:
+        # compare the predicted measurements with the training data
+        fig, ax = plt.subplots(3, len(quad_strengths), sharex="all", sharey="all")
+
+        train_dset.plot_data(
+            overlay_data=pred_dset,
+            overlay_kwargs={"levels": [0.01, 0.25, 0.75, 0.9], "cmap": "Greys"},
+            filter_size=0,
+            ax=ax[0],
+            add_labels=False,
+        )
+
+        i = 1
+        for ele in [train_dset, pred_dset]:
+            ele.plot_data(ax=ax[i], add_labels=False)
+            i += 1
+
+        fig.set_size_inches(10, 5)
+        fig.tight_layout()
+
+        fig2, ax2 = plt.subplots()
+        ax2.semilogy(cb.training_loss)
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Training Loss")
+
+        save_name = "gpsr_training" or save_name
+        if save_location is not None:
+            fig.savefig(os.path.join(save_location, save_name) + ".png")
+            fig2.savefig(os.path.join(save_location, "loss_" + save_name) + ".png")
+
+    results.update(
+        {
+            "reconstructed_distribution": reconstructed_beam,
+            "fractional_distribution": fractional_beam,
+            "gpsr_model": gpsr_model,
+            "prediction_dataset": pred_dset,
+            "training_dataset": train_dset,
+        }
+    )
+
+    return results
