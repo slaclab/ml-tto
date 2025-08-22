@@ -68,6 +68,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     transmission_measurement: Optional[TransmissionMeasurement] = None
     transmission_measurement_constraint: Optional[float] = 0.9
     max_measurement_retries: int = 10
+    bctrl_refresh_rate: float = 0.02
 
     # data storage
     X: Optional[Xopt] = None
@@ -79,12 +80,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
             print(f"Setting quadrupole strength to {inputs['k']}")
         self.magnet.bctrl = inputs["k"]
 
-        # start by waiting one refesh cycle for bctrl
+        # start by waiting one refresh cycle for bctrl
         # then wait for bact to match bctrl
-        # bctrl referesh rate is less than 10 ms
-        time.sleep(0.02)
+        # bctrl refresh rate is less than 10 ms
+        time.sleep(self.bctrl_refresh_rate)
         while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
-            time.sleep(0.05)
+            time.sleep(self.bctrl_refresh_rate)
 
         if self.verbose:
             print(f"Quadrupole strength bact is {self.magnet.bact}")
