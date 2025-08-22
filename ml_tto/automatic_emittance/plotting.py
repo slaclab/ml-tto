@@ -81,4 +81,4 @@ def plot_screen_profile_measurement(measurement, n_stds: float = 4.0):
         measurement.image_processor.auto_process(measurement.device.image)
     )
 
-    plot_image_projection_fit(result, n_stds=n_stds)
+    return plot_image_projection_fit(result, n_stds=n_stds)
