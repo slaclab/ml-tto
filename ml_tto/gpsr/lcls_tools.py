@@ -16,12 +16,14 @@ def hdf5_group_to_dict(hdf5_object):
             data_dict[key] = item[()]  # Read dataset content
     return data_dict
 
+def get_lcls_tools_data_from_file(fname: str):
+    with h5py.File(fname, "r") as f:
+        info = hdf5_group_to_dict(f)
+    return get_lcls_tools_data(info)
 
 def get_lcls_tools_data(
-    fname: str,
+    info: dict,
 ):
-    info = hdf5_group_to_dict(h5py.File(fname))
-
     metadata = info["metadata"]
     energy = metadata["energy"]
     rmat = metadata["rmat"]

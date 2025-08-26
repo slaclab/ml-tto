@@ -294,9 +294,9 @@ def gpsr_fit_file(
         data = get_matlab_data(fname)
 
     elif os.path.splitext(fname)[-1] in [".h5", ".hdf5"]:
-        from ml_tto.gpsr.lcls_tools import get_lcls_tools_data
+        from ml_tto.gpsr.lcls_tools import get_lcls_tools_data_from_file
 
-        data = get_lcls_tools_data(fname)
+        data = get_lcls_tools_data_from_file(fname)
 
     resolution = data["resolution"]
     images = data["images"]
@@ -447,7 +447,7 @@ def gpsr_fit_quad_scan(
     # combine into dataset
     train_dset = QuadScanDataset(
         torch.tensor(quad_strengths, dtype=torch.float32).unsqueeze(-1),
-        torch.tensor(images, dtype=torch.float32) + 1e-8,
+        (torch.tensor(images, dtype=torch.float32) + 1e-8,),
         screen,
     )
 
@@ -493,7 +493,7 @@ def gpsr_fit_quad_scan(
 
     # predict the measurements to compare with training data
     pred = gpsr_model(train_dset.parameters)[0].detach()
-    pred_dset = QuadScanDataset(train_dset.parameters, pred, screen)
+    pred_dset = QuadScanDataset(train_dset.parameters, (pred,), screen)
 
     # grab a fraction of the beam for emittance / twiss calculations
     # if the cholesky factorization fails then return the full beam
