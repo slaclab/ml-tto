@@ -1,8 +1,6 @@
-import warnings
 from typing import Tuple
 import torch
 import os
-import matlab_parser
 import numpy as np
 import matplotlib.pyplot as plt
 from lcls_tools.common.data.model_general_calcs import bmag
@@ -132,114 +130,6 @@ def get_beam_fraction_bmadx_particle(beam_distribution, beam_fraction):
     return frac_particle
 
 
-def get_matlab_data(fname):
-    """
-    Load data from LCLS/LCLS-II Matlab emittance measurement.
-
-    Parameters
-    ----------
-    fname: str
-        The path to the .mat file.
-
-    Returns
-    -------
-    dict
-        A dictionary containing the loaded data.
-    """
-    data = matlab_parser.loadmat(fname)
-
-    # get parameters
-    quad_strengths = data["data"]["quadVal"]
-    energy = data["data"]["energy"] * 1e9
-    rmat = torch.tensor(np.array(data["data"]["rMatrix"]))
-    resolution = data["data"]["dataList"][0]["res"][0] * 1e-6
-
-    # get images from matlab and pre-process the images
-    images = []
-    for ele in data["data"]["dataList"]:
-        images += [np.array(ele["img"])]
-    images = np.stack(images).transpose(0, 1, -1, -2)
-
-    # get the design twiss
-    design_twiss = [
-        *data["data"]["twiss0"].T[0][1:],
-        *data["data"]["twiss0"].T[1][1:],
-    ]
-
-    return {
-        "quad_strengths": quad_strengths,
-        "energy": energy,
-        "rmat": rmat,
-        "resolution": resolution,
-        "images": images,
-        "design_twiss": design_twiss,
-    }
-
-
-def gpsr_fit_matlab(
-    fname: str,
-    n_epochs: int = 500,
-    beam_fraction: float = 1.0,
-    pool_size: int = 1,
-    save_location: str = None,
-    visualize: bool = False,
-):
-    """
-    Use GPSR to fit the beam distribution from Matlab emittance measurements taken at LCLS/LCLS-II.
-
-    Parameters
-    ----------
-    fname: str
-        The path to the .mat file.
-    n_epochs: int
-        The number of training epochs.
-    pool_size: int, optional
-        Size of pooling layer to compress images to smaller sizes for speeding up GPSR fitting.
-    save_location: str, optional
-        The location to save diagnostic plots.
-    beam_fraction: float, optional
-        The core fraction of the beam to use for fitting. See `get_core_beam` for more information.
-    visualize: bool, optional
-        Whether to visualize the diagnostic plots.
-
-    """
-
-    matlab_data = get_matlab_data(fname)
-    resolution = matlab_data["resolution"]
-    images = matlab_data["images"]
-
-    # process images by centering, cropping, and normalizing
-    results = process_images(
-        images,
-        resolution * 1e6,
-        crop=True,
-        n_stds=4,
-        pool_size=pool_size,
-    )
-    resolution *= pool_size
-    final_images = np.mean(results["images"], axis=1)
-
-    save_name = os.path.split(fname)[-1].split(".")[0] + "_gpsr_prediction"
-
-    return gpsr_fit_quad_scan(
-        matlab_data["quad_strengths"],
-        final_images,
-        matlab_data["energy"],
-        matlab_data["rmat"],
-        resolution,
-        n_epochs,
-        beam_fraction,
-        design_twiss=matlab_data["design_twiss"],
-        visualize=visualize,
-        save_location=save_location,
-        save_name=save_name,
-    )
-
-
-def qpsr_fit_lcls_tools():
-    pass
-
-
 class CustomLeakyReLU(torch.nn.Module):
     def forward(self, x):
         return 2 * torch.nn.LeakyReLU(negative_slope=0.1)(x)
@@ -364,6 +254,90 @@ class MetricTracker(L.Callback):
 
     def on_train_epoch_end(self, trainer, pl_module):
         self.training_loss.append(trainer.callback_metrics["loss"].item())
+
+
+def gpsr_fit_file(
+    fname: str,
+    n_epochs: int = 500,
+    beam_fraction: float = 1.0,
+    pool_size: int = 1,
+    data_slice: slice = None,
+    save_location: str = None,
+    visualize: bool = False,
+):
+    """
+    Use GPSR to fit the beam distribution from emittance measurements taken at LCLS/LCLS-II.
+    Supports dump files from matlab (.mat) and lcls-tools (.h5, .hdf5).
+
+    Parameters
+    ----------
+    fname: str
+        The path to the data file.
+    n_epochs: int
+        The number of training epochs.
+    pool_size: int, optional
+        Size of pooling layer to compress images to smaller sizes for speeding up GPSR fitting.
+    data_slice: slice, optional
+        A slice object to select a subset of the data for fitting.
+    save_location: str, optional
+        The location to save diagnostic plots.
+    beam_fraction: float, optional
+        The core fraction of the beam to use for fitting. See `get_core_beam` for more information.
+    visualize: bool, optional
+        Whether to visualize the diagnostic plots.
+
+    """
+
+    if os.path.splitext(fname)[-1] == ".mat":
+        from ml_tto.gpsr.matlab import get_matlab_data
+
+        data = get_matlab_data(fname)
+
+    elif os.path.splitext(fname)[-1] in [".h5", ".hdf5"]:
+        from ml_tto.gpsr.lcls_tools import get_lcls_tools_data
+
+        data = get_lcls_tools_data(fname)
+
+    resolution = data["resolution"]
+    images = data["images"]
+
+    # process images by centering, cropping, and normalizing
+    results = process_images(
+        images,
+        resolution * 1e6,
+        crop=True,
+        n_stds=4,
+        pool_size=pool_size,
+    )
+    resolution *= pool_size
+
+    if os.path.splitext(fname)[-1] == ".mat":
+        final_images = np.mean(results["images"], axis=1)
+    else:
+        final_images = results["images"]
+
+    save_name = os.path.split(fname)[-1].split(".")[0] + "_gpsr_prediction"
+
+    if data_slice is not None:
+        final_images = final_images[data_slice]
+        data["quad_strengths"] = data["quad_strengths"][data_slice]
+        data["rmat"] = data["rmat"][data_slice]
+
+    print(f"Final image shape {final_images.shape}")
+
+    return gpsr_fit_quad_scan(
+        data["quad_strengths"],
+        final_images,
+        data["energy"],
+        data["rmat"],
+        resolution,
+        n_epochs,
+        beam_fraction,
+        design_twiss=data["design_twiss"],
+        visualize=visualize,
+        save_location=save_location,
+        save_name=save_name,
+    )
 
 
 def gpsr_fit_quad_scan(
