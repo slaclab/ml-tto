@@ -23,7 +23,7 @@ dependencies = [
     "pydantic",
     "h5py",
     "scikit-learn",
-    "xopt",
+    "xopt >= 2.6.6",
     "cheetah-accelerator",
     "scikit-image",
     "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git",
