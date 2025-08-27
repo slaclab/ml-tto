@@ -7,7 +7,7 @@ from lcls_tools.common.data.model_general_calcs import bmag
 
 from gpsr.modeling import GPSR, GPSRLattice
 from gpsr.train import LitGPSR
-from gpsr.beams import NNParticleBeamGeneratorND, NNTransform
+from gpsr.beams import NNParticleBeamGenerator, NNTransform
 from gpsr.datasets import QuadScanDataset
 from gpsr.data_processing import process_images
 from cheetah.accelerator import Screen
@@ -464,7 +464,7 @@ def gpsr_fit_quad_scan(
 
     p0c = torch.tensor(energy).to(dtype=torch.float32)
     gpsr_model = GPSR(
-        NNParticleBeamGeneratorND(
+        NNParticleBeamGenerator(
             50000,
             p0c,
             transformer=NNTransform(
