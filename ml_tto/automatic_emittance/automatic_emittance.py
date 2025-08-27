@@ -7,14 +7,18 @@ from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
 from lcls_tools.common.measurements.emittance_measurement import (
     QuadScanEmittance,
+    EmittanceMeasurementResult,
 )
 from typing import Callable, Optional, Tuple
 
-from pydantic import PositiveInt
+from pydantic import PositiveFloat, PositiveInt
 import time
 
+from gpsr.data_processing import process_images
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
+from ml_tto.gpsr.lcls_tools import get_lcls_tools_data
+from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -317,3 +321,64 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution,
             )
         )
+
+
+class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
+    pool_size: PositiveInt = 1
+    n_epochs: PositiveInt = 500
+    subsample: PositiveInt = 1
+    beam_fraction: PositiveFloat = 1.0
+    visualize_gpsr: bool = False
+
+    def calculate_emittance(self):
+        """
+        Modify the emittance calculation for the quad scan to utilize GPSR.
+        """
+        # get the emittance measurement result object
+        initial_result = super().calculate_emittance()
+
+        data = get_lcls_tools_data(initial_result.model_dump())
+
+        resolution = data["resolution"]
+        images = data["images"]
+
+        # process images by centering, cropping, and normalizing
+        results = process_images(
+            images,
+            resolution * 1e6,
+            crop=True,
+            n_stds=4,
+            pool_size=self.pool_size,
+        )
+        resolution *= self.pool_size
+
+        final_images = results["images"]
+
+        final_images = final_images[:: self.subsample]
+        data["quad_strengths"] = data["quad_strengths"][:: self.subsample]
+        data["rmat"] = data["rmat"][:: self.subsample]
+
+        gpsr_result = gpsr_fit_quad_scan(
+            data["quad_strengths"],
+            final_images,
+            data["energy"],
+            data["rmat"],
+            resolution,
+            self.n_epochs,
+            self.beam_fraction,
+            design_twiss=data["design_twiss"],
+            visualize=self.visualize_gpsr,
+        )
+
+        formatted_result = EmittanceMeasurementResult(
+            quadrupole_focusing_strengths=[data["quad_strengths"]] * 2,
+            quadrupole_pv_values=[data["quad_pv_values"]] * 2,
+            emittance=gpsr_result["emittance"],
+            bmag=gpsr_result["bmag"],
+            twiss_at_screen=gpsr_result["twiss_at_screen"],
+            rms_beamsizes=gpsr_result["rms_beamsizes"],
+            beam_matrix=gpsr_result["beam_matrix"],
+            metadata=initial_result.metadata,
+        )
+
+        return formatted_result

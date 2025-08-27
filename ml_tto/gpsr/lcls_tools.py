@@ -16,10 +16,12 @@ def hdf5_group_to_dict(hdf5_object):
             data_dict[key] = item[()]  # Read dataset content
     return data_dict
 
+
 def get_lcls_tools_data_from_file(fname: str):
     with h5py.File(fname, "r") as f:
         info = hdf5_group_to_dict(f)
     return get_lcls_tools_data(info)
+
 
 def get_lcls_tools_data(
     info: dict,
@@ -34,13 +36,24 @@ def get_lcls_tools_data(
     ]
     l_eff = metadata["magnet"]["metadata"]["l_eff"]
 
-    quad_pv_values = np.array(
-        [
-            ele
-            for ele in list(info["quadrupole_pv_values"]["0"][:])
-            + list(info["quadrupole_pv_values"]["1"][:])
-        ]
-    )
+    # depending on the context `info["quadrupole_pv_values"]` could be a list or a dict
+    if isinstance(info["quadrupole_pv_values"], dict):
+        quad_pv_values = np.array(
+            [
+                ele
+                for ele in list(info["quadrupole_pv_values"]["0"])
+                + list(info["quadrupole_pv_values"]["1"])
+            ]
+        )
+    elif isinstance(info["quadrupole_pv_values"], list):
+        quad_pv_values = np.array(
+            [
+                ele
+                for ele in list(info["quadrupole_pv_values"][0])
+                + list(info["quadrupole_pv_values"][1])
+            ]
+        )
+
     idx_sort = np.argsort(quad_pv_values)
     quad_pv_values = quad_pv_values[idx_sort]
 
@@ -72,6 +85,7 @@ def get_lcls_tools_data(
 
     return {
         "quad_strengths": quad_focusing_strengths,
+        "quad_pv_values": quad_pv_values,
         "energy": energy,
         "rmat": rmats,
         "resolution": resolution,
