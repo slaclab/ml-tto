@@ -23,10 +23,11 @@ dependencies = [
     "pydantic",
     "h5py",
     "scikit-learn",
-    "xopt",
+    "xopt >= 2.6.6",
     "cheetah-accelerator",
     "scikit-image",
-    "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git"
+    "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git",
+    "gpsr @ git+https://github.com/roussel-ryan/gpsr.git"
 ]
 description = "Tools to support high level application development at LCLS using Python"
 dynamic = ["version"]

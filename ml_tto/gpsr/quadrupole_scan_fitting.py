@@ -7,7 +7,7 @@ from lcls_tools.common.data.model_general_calcs import bmag
 
 from gpsr.modeling import GPSR, GPSRLattice
 from gpsr.train import LitGPSR
-from gpsr.beams import NNParticleBeamGeneratorND, NNTransform
+from gpsr.beams import NNParticleBeamGenerator, NNTransform
 from gpsr.datasets import QuadScanDataset
 from gpsr.data_processing import process_images
 from cheetah.accelerator import Screen
@@ -178,7 +178,7 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
                 (1 + final_beam.alpha_x**2) / final_beam.beta_x,
             )
         )
-        .detach()
+        .T.detach()
         .numpy(),
         torch.stack(
             (
@@ -187,7 +187,7 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
                 (1 + final_beam.alpha_y**2) / final_beam.beta_y,
             )
         )
-        .detach()
+        .T.detach()
         .numpy(),
     ]
 
@@ -208,9 +208,9 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
         final_beam.sigma_y.detach().numpy(),
     ]
 
-    # compute sigma matricies at each point
+    # compute the reconstructed beam matrix
     cov = torch.cov(reconstructed_beam.particles.T)
-    sigma_matrix = (
+    beam_matrix = (
         torch.stack(
             (
                 torch.triu(cov[:2, :2]).flatten()[
@@ -226,24 +226,27 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
     )
 
     results = {
-        "norm_emit_x": reconstructed_beam.emittance_x
-        * reconstructed_beam.energy
-        / 0.511e6,
-        "norm_emit_y": reconstructed_beam.emittance_y
-        * reconstructed_beam.energy
-        / 0.511e6,
+        "emittance": np.array(
+            [
+                reconstructed_beam.emittance_x.detach().cpu().numpy(),
+                reconstructed_beam.emittance_y.detach().cpu().numpy(),
+            ]
+        ).reshape(2, 1)
+        * 1e6,
         "beta_x": reconstructed_beam.beta_x,
         "beta_y": reconstructed_beam.beta_y,
         "alpha_x": reconstructed_beam.alpha_x,
         "alpha_y": reconstructed_beam.alpha_y,
         "screen_distribution": final_beam,
         "twiss_at_screen": twiss_at_screen,
-        "rms_sizes": rms_sizes,
-        "sigma_matrix": sigma_matrix,
+        "rms_beamsizes": rms_sizes,
+        "beam_matrix": beam_matrix,
     }
 
     if design_twiss is not None:
         results["bmag"] = bmag_val
+    else:
+        results["bmag"] = None
 
     return results
 
@@ -461,7 +464,7 @@ def gpsr_fit_quad_scan(
 
     p0c = torch.tensor(energy).to(dtype=torch.float32)
     gpsr_model = GPSR(
-        NNParticleBeamGeneratorND(
+        NNParticleBeamGenerator(
             50000,
             p0c,
             transformer=NNTransform(
