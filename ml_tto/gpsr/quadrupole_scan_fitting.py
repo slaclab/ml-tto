@@ -270,7 +270,6 @@ class MetricTracker(L.Callback):
 
 def gpsr_fit_file(
     fname: str,
-    pool_size: int = 1,
     data_slice: slice = None,
     save_location: str = None,
     visualize: bool = False,
@@ -522,9 +521,7 @@ def gpsr_fit_quad_scan(
     # grab a fraction of the beam for emittance / twiss calculations
     # if the cholesky factorization fails then return the full beam
     if beam_fraction < 1.0:
-        fractional_beam = get_beam_fraction_bmadx_particle(
-            reconstructed_beam, beam_fraction
-        )
+        fractional_beam = get_beam_fraction(reconstructed_beam, beam_fraction)
 
     else:
         fractional_beam = reconstructed_beam

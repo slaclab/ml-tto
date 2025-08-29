@@ -324,9 +324,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
 
 class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
-    pool_size: PositiveInt = 1
+    max_pixels: PositiveInt = 1e5
     n_epochs: PositiveInt = 500
-    subsample: PositiveInt = 1
+    n_particles: PositiveInt = 10000
     beam_fraction: PositiveFloat = 1.0
     visualize_gpsr: bool = False
 
@@ -345,27 +345,28 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
         # process images by centering, cropping, and normalizing
         results = process_images(
             images,
-            resolution * 1e6,
+            resolution,
             crop=True,
-            n_stds=4,
-            pool_size=self.pool_size,
+            center=True,
+            n_stds=self.n_stds,
+            max_pixels=self.max_pixels,
         )
-        resolution *= self.pool_size
+        resolution = results["pixel_size"]
 
-        final_images = results["images"]
-
-        final_images = final_images[:: self.subsample]
-        data["quad_strengths"] = data["quad_strengths"][:: self.subsample]
-        data["rmat"] = data["rmat"][:: self.subsample]
+        # subsample based on process images
+        print(f"subsample indicies {results['subsample_idx']}")
+        data["quad_strengths"] = data["quad_strengths"][results["subsample_idx"]]
+        data["rmat"] = data["rmat"][results["subsample_idx"]]
 
         gpsr_result = gpsr_fit_quad_scan(
             data["quad_strengths"],
-            final_images,
+            results["images"],
             data["energy"],
             data["rmat"],
             resolution,
             self.n_epochs,
             self.beam_fraction,
+            n_particles=self.n_particles,
             design_twiss=data["design_twiss"],
             visualize=self.visualize_gpsr,
         )
