@@ -80,7 +80,7 @@ class RMatLattice(GPSRLattice):
         return tuple(observations.unsqueeze(0))
 
 
-def get_beam_fraction_bmadx_particle(beam_distribution, beam_fraction):
+def get_beam_fraction(beam_distribution, beam_fraction, particle_slices=None):
     """
     Get the core of the beam according to 6D normalized beam coordinates.
     Particles from the beam distribution are scaled to normalized coordinates
@@ -92,6 +92,8 @@ def get_beam_fraction_bmadx_particle(beam_distribution, beam_fraction):
         Cheetah ParticleBeam object representing the beam distribution.
     beam_fraction: float
         The fraction of the beam to keep from 0 - 1.
+    particle_slices: list[slice] or slice, optional
+        List of slices to apply along the particle coordinates
 
     Returns
     -------
@@ -100,7 +102,14 @@ def get_beam_fraction_bmadx_particle(beam_distribution, beam_fraction):
 
     """
     # extract macroparticles
-    data = beam_distribution.particles.detach()[..., :6]
+    macroparticles = beam_distribution.particles.detach()[..., :6]
+
+    if isinstance(particle_slices, list):
+        data = macroparticles[..., particle_slices]
+    elif isinstance(particle_slices, slice):
+        data = macroparticles[..., particle_slices]
+    else:
+        data = macroparticles
 
     # calculate covariance matrix
     cov = torch.cov(data.T)
@@ -118,10 +127,10 @@ def get_beam_fraction_bmadx_particle(beam_distribution, beam_fraction):
     # sort particles by their distance from the origin and hold onto a fraction of them
     J = torch.linalg.norm(t_data, axis=1)
     sort_idx = torch.argsort(J)
-    frac_coords = data[sort_idx][: int(len(data) * beam_fraction)]
-    frac_coords = torch.hstack((frac_coords, torch.ones((len(frac_coords), 1))))
+    frac_coords = macroparticles[sort_idx][: int(len(data) * beam_fraction)]
 
     # create a beam distribution to return
+    frac_coords = torch.hstack((frac_coords, torch.ones((len(frac_coords), 1))))
     frac_particle = ParticleBeam(
         frac_coords.to(beam_distribution.energy),
         energy=beam_distribution.energy,
@@ -261,12 +270,12 @@ class MetricTracker(L.Callback):
 
 def gpsr_fit_file(
     fname: str,
-    n_epochs: int = 500,
-    beam_fraction: float = 1.0,
-    pool_size: int = 1,
     data_slice: slice = None,
     save_location: str = None,
     visualize: bool = False,
+    max_pixels: int = 1e5,
+    n_stds: int = 5,
+    **kwargs,
 ):
     """
     Use GPSR to fit the beam distribution from emittance measurements taken at LCLS/LCLS-II.
@@ -276,18 +285,16 @@ def gpsr_fit_file(
     ----------
     fname: str
         The path to the data file.
-    n_epochs: int
-        The number of training epochs.
     pool_size: int, optional
         Size of pooling layer to compress images to smaller sizes for speeding up GPSR fitting.
     data_slice: slice, optional
         A slice object to select a subset of the data for fitting.
     save_location: str, optional
         The location to save diagnostic plots.
-    beam_fraction: float, optional
-        The core fraction of the beam to use for fitting. See `get_core_beam` for more information.
     visualize: bool, optional
         Whether to visualize the diagnostic plots.
+    kwargs:
+        Optional arguments passed to `gpsr_fit_quad_scan`
 
     """
 
@@ -295,6 +302,9 @@ def gpsr_fit_file(
         from ml_tto.gpsr.matlab import get_matlab_data
 
         data = get_matlab_data(fname)
+
+        # matlab data has multiple shots that we avg over so we multiply the max pixels by n_shots
+        max_pixels *= data["images"].shape[0]
 
     elif os.path.splitext(fname)[-1] in [".h5", ".hdf5"]:
         from ml_tto.gpsr.lcls_tools import get_lcls_tools_data_from_file
@@ -307,19 +317,25 @@ def gpsr_fit_file(
     # process images by centering, cropping, and normalizing
     results = process_images(
         images,
-        resolution * 1e6,
+        resolution,
         crop=True,
-        n_stds=4,
-        pool_size=pool_size,
+        center=True,
+        n_stds=n_stds,
+        max_pixels=max_pixels,
     )
-    resolution *= pool_size
+    resolution = results["pixel_size"]
 
     if os.path.splitext(fname)[-1] == ".mat":
-        final_images = np.mean(results["images"], axis=1)
+        final_images = np.mean(results["images"], axis=0)
     else:
         final_images = results["images"]
 
     save_name = os.path.split(fname)[-1].split(".")[0] + "_gpsr_prediction"
+
+    # subsample based on process images
+    print(f"subsample indicies {results['subsample_idx']}")
+    data["quad_strengths"] = data["quad_strengths"][results["subsample_idx"]]
+    data["rmat"] = data["rmat"][results["subsample_idx"]]
 
     if data_slice is not None:
         final_images = final_images[data_slice]
@@ -334,12 +350,11 @@ def gpsr_fit_file(
         data["energy"],
         data["rmat"],
         resolution,
-        n_epochs,
-        beam_fraction,
         design_twiss=data["design_twiss"],
         visualize=visualize,
         save_location=save_location,
         save_name=save_name,
+        **kwargs,
     )
 
 
@@ -354,6 +369,7 @@ def gpsr_fit_quad_scan(
     output_scale=1e-4,
     n_layers=5,
     layer_width=20,
+    n_particles=10000,
     design_twiss=None,
     visualize=False,
     save_location=None,
@@ -376,6 +392,8 @@ def gpsr_fit_quad_scan(
     - layer_width: Width of the layers in the transformer neural network. Increasing the layer width can
         (linearly) improve the model's ability to learn complex patterns but also increases the number of
         epochs required for training.
+    - n_particles: Number of macroparticles to track. Increasing the number of particles (linearly) improves
+        improve the model's ability to learn complex patterns but increases computation time.
 
     Make sure to visualize and monitor diagnostic plots to verify the convergence.
 
@@ -400,6 +418,8 @@ def gpsr_fit_quad_scan(
         Number of layers in the transformer neural network.
     layer_width: int, optional
         Width of the layers in the transformer neural network.
+    n_particles: int, optional
+        Number of macroparticles to track.
     beam_fraction: float, optional
         Fraction of the beam to use for measuring the rms parameters (between 0 and 1).
         Defaults to 1.0.
@@ -465,7 +485,7 @@ def gpsr_fit_quad_scan(
     p0c = torch.tensor(energy).to(dtype=torch.float32)
     gpsr_model = GPSR(
         NNParticleBeamGenerator(
-            50000,
+            n_particles,
             p0c,
             transformer=NNTransform(
                 n_hidden=n_layers,
@@ -501,9 +521,7 @@ def gpsr_fit_quad_scan(
     # grab a fraction of the beam for emittance / twiss calculations
     # if the cholesky factorization fails then return the full beam
     if beam_fraction < 1.0:
-        fractional_beam = get_beam_fraction_bmadx_particle(
-            reconstructed_beam, beam_fraction
-        )
+        fractional_beam = get_beam_fraction(reconstructed_beam, beam_fraction)
 
     else:
         fractional_beam = reconstructed_beam
