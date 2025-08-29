@@ -329,6 +329,7 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
     n_particles: PositiveInt = 10000
     beam_fraction: PositiveFloat = 1.0
     visualize_gpsr: bool = False
+    n_stds: PositiveFloat = 5.0
 
     def calculate_emittance(self):
         """
@@ -357,6 +358,7 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
         print(f"subsample indicies {results['subsample_idx']}")
         data["quad_strengths"] = data["quad_strengths"][results["subsample_idx"]]
         data["rmat"] = data["rmat"][results["subsample_idx"]]
+        data["quad_pv_values"] = data["quad_pv_values"][results["subsample_idx"]]
 
         gpsr_result = gpsr_fit_quad_scan(
             data["quad_strengths"],
