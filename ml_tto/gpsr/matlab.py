@@ -4,8 +4,9 @@ import os
 
 from gpsr.data_processing import process_images
 
-import matlab_parser
+from ml_tto.gpsr import matlab_parser
 from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
+
 
 def get_matlab_data(fname):
     """
@@ -33,7 +34,7 @@ def get_matlab_data(fname):
     images = []
     for ele in data["data"]["dataList"]:
         images += [np.array(ele["img"])]
-    images = np.stack(images).transpose(0, 1, -1, -2)
+    images = np.stack(images).transpose(1, 0, -1, -2)
 
     # get the design twiss
     design_twiss = [
