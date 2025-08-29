@@ -384,4 +384,4 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
             metadata=initial_result.metadata,
         )
 
-        return formatted_result
+        return formatted_result, gpsr_result
