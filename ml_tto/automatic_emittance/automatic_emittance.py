@@ -1,5 +1,6 @@
 import warnings
 import traceback
+import time
 
 import numpy as np
 from xopt import Xopt, Evaluator, VOCS
@@ -330,6 +331,7 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
     beam_fraction: PositiveFloat = 1.0
     visualize_gpsr: bool = False
     n_stds: PositiveFloat = 5.0
+    save_name: str = "gpsr_result"
 
     def calculate_emittance(self):
         """
@@ -354,6 +356,8 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
         )
         resolution = results["pixel_size"]
 
+        print(f"Final image shape {results['images'].shape}")
+
         # subsample based on process images
         print(f"subsample indicies {results['subsample_idx']}")
         data["quad_strengths"] = data["quad_strengths"][results["subsample_idx"]]
@@ -371,6 +375,8 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
             n_particles=self.n_particles,
             design_twiss=data["design_twiss"],
             visualize=self.visualize_gpsr,
+            save_location=self.save_location,
+            save_name=self.save_name,
         )
 
         formatted_result = EmittanceMeasurementResult(
