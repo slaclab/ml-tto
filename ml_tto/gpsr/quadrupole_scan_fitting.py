@@ -504,7 +504,13 @@ def gpsr_fit_quad_scan(
 
     # create a pytorch lightning trainer
     cb = MetricTracker()
-    trainer = L.Trainer(limit_train_batches=100, max_epochs=n_epochs, callbacks=[cb])
+    trainer = L.Trainer(
+        limit_train_batches=100,
+        max_epochs=n_epochs,
+        callbacks=[cb],
+        accelerator="gpu",
+        devices=1,
+    )
 
     # run the training
     start = time.time()
@@ -521,6 +527,7 @@ def gpsr_fit_quad_scan(
     # grab a fraction of the beam for emittance / twiss calculations
     # if the cholesky factorization fails then return the full beam
     if beam_fraction < 1.0:
+        print(f"getting beam fraction {beam_fraction}")
         fractional_beam = get_beam_fraction(reconstructed_beam, beam_fraction)
 
     else:
@@ -533,6 +540,7 @@ def gpsr_fit_quad_scan(
         # compare the predicted measurements with the training data
         fig, ax = plt.subplots(3, len(quad_strengths), sharex="all", sharey="all")
 
+        # plot training data
         train_dset.plot_data(
             overlay_data=pred_dset,
             overlay_kwargs={"levels": [0.01, 0.25, 0.75, 0.9], "cmap": "Greys"},
@@ -549,15 +557,20 @@ def gpsr_fit_quad_scan(
         fig.set_size_inches(10, 5)
         fig.tight_layout()
 
+        # plot loss curve
         fig2, ax2 = plt.subplots()
         ax2.semilogy(cb.training_loss)
         ax2.set_xlabel("Epoch")
         ax2.set_ylabel("Training Loss")
 
-        save_name = "gpsr_training" or save_name
+        # plot distribution
+        fig3, ax = fractional_beam.plot_distribution(dimensions=("x", "px", "y", "py"))
+
+        save_name = save_name or "gpsr_training"
         if save_location is not None:
             fig.savefig(os.path.join(save_location, save_name) + ".png")
             fig2.savefig(os.path.join(save_location, "loss_" + save_name) + ".png")
+            fig3.savefig(os.path.join(save_location, "dist_" + save_name) + ".png")
 
     results.update(
         {
