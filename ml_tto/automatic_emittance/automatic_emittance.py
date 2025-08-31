@@ -20,6 +20,7 @@ from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 from ml_tto.gpsr.lcls_tools import get_lcls_tools_data
 from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
+from ml_tto.gpsr.utils import image_snr
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -332,6 +333,7 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
     visualize_gpsr: bool = False
     n_stds: PositiveFloat = 5.0
     save_name: str = "gpsr_result"
+    image_min_signal_to_noise_ratio: PositiveFloat = 20.0
 
     def calculate_emittance(self):
         """
@@ -344,6 +346,14 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
 
         resolution = data["resolution"]
         images = data["images"]
+
+        # filter data by signal to noise ratio of images
+        snr_values = [image_snr(img) for img in images]
+        snr_condition = snr_values > self.image_min_signal_to_noise_ratio
+        images = images[snr_condition]
+        quad_strengths = data["quad_strengths"][snr_condition]
+        rmat = data["rmat"][snr_condition]
+        quad_pv_values = data["quad_pv_values"][snr_condition]
 
         # process images by centering, cropping, and normalizing
         results = process_images(
@@ -360,15 +370,15 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
 
         # subsample based on process images
         print(f"subsample indicies {results['subsample_idx']}")
-        data["quad_strengths"] = data["quad_strengths"][results["subsample_idx"]]
-        data["rmat"] = data["rmat"][results["subsample_idx"]]
-        data["quad_pv_values"] = data["quad_pv_values"][results["subsample_idx"]]
+        quad_strengths = quad_strengths[results["subsample_idx"]]
+        rmat = rmat[results["subsample_idx"]]
+        quad_pv_values = quad_pv_values[results["subsample_idx"]]
 
         gpsr_result = gpsr_fit_quad_scan(
-            data["quad_strengths"],
+            quad_strengths,
             results["images"],
             data["energy"],
-            data["rmat"],
+            rmat,
             resolution,
             self.n_epochs,
             self.beam_fraction,
@@ -380,8 +390,8 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
         )
 
         formatted_result = EmittanceMeasurementResult(
-            quadrupole_focusing_strengths=[data["quad_strengths"]] * 2,
-            quadrupole_pv_values=[data["quad_pv_values"]] * 2,
+            quadrupole_focusing_strengths=[quad_strengths] * 2,
+            quadrupole_pv_values=[quad_pv_values] * 2,
             emittance=gpsr_result["emittance"],
             bmag=gpsr_result["bmag"],
             twiss_at_screen=gpsr_result["twiss_at_screen"],
