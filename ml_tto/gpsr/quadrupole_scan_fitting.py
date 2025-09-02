@@ -275,6 +275,7 @@ def gpsr_fit_file(
     visualize: bool = False,
     max_pixels: int = 1e5,
     n_stds: int = 5,
+    threshold_multiplier=1.2,
     **kwargs,
 ):
     """
@@ -322,6 +323,8 @@ def gpsr_fit_file(
         center=True,
         n_stds=n_stds,
         max_pixels=max_pixels,
+        median_filter_size=3,
+        threshold_multiplier=threshold_multiplier,
     )
     resolution = results["pixel_size"]
 
@@ -330,6 +333,7 @@ def gpsr_fit_file(
     else:
         final_images = results["images"]
 
+    final_images = np.clip(final_images - 0.00001, 0.0, None)
     save_name = os.path.split(fname)[-1].split(".")[0] + "_gpsr_prediction"
 
     # subsample based on process images
@@ -367,7 +371,7 @@ def gpsr_fit_quad_scan(
     n_epochs=500,
     beam_fraction=1.0,
     output_scale=1e-4,
-    n_layers=5,
+    n_layers=2,
     layer_width=20,
     n_particles=10000,
     design_twiss=None,
@@ -463,14 +467,14 @@ def gpsr_fit_quad_scan(
         resolution=images.shape[1:],
         pixel_size=torch.ones(2) * resolution,
         method="kde",
-        kde_bandwidth=torch.tensor(resolution, dtype=torch.float32),
+        kde_bandwidth=torch.tensor(resolution, dtype=torch.float32) / 2.0,
         is_active=True,
     )
 
     # combine into dataset
     train_dset = QuadScanDataset(
         torch.tensor(quad_strengths, dtype=torch.float32).unsqueeze(-1),
-        (torch.tensor(images, dtype=torch.float32) + 1e-8,),
+        (torch.tensor(images, dtype=torch.float32),),
         screen,
     )
 
