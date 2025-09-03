@@ -42,10 +42,10 @@ class TestGPSRLCLSTools:
             assert key in data
 
         # check the shapes of the data
-        assert data["quad_strengths"].shape == (13,)
-        assert data["quad_pv_values"].shape == (13,)
-        assert data["rmat"].shape == (13, 6, 6)
-        assert data["images"].shape == (13, 1392, 1040)
+        assert data["quad_strengths"].shape == (36,)
+        assert data["quad_pv_values"].shape == (36,)
+        assert data["rmat"].shape == (36, 6, 6)
+        assert data["images"].shape == (36, 139, 104)
         assert isinstance(data["resolution"], float)
         assert np.array(data["design_twiss"]).shape == (4,)
         assert isinstance(data["energy"], float)
@@ -74,8 +74,8 @@ class TestGPSRLCLSTools:
 
         n_quad_strengths = output["quad_strengths"].shape[0]
 
-        assert len(output["images"]) == 1
-        assert output["images"][0].shape[0] == n_quad_strengths
+        assert len(output["images"]) == n_quad_strengths
+        assert output["images"].shape[0] == n_quad_strengths
         assert output["quad_pv_values"].shape[0] == n_quad_strengths
         assert output["rmat"].shape == (n_quad_strengths, 6, 6)
         assert isinstance(output["resolution"], float)
