@@ -324,11 +324,21 @@ def gpsr_fit_quad_scan(
         # plot distribution
         fig3, ax = fractional_beam.plot_distribution(dimensions=("x", "px", "y", "py"))
 
+        # add distribution statistics to plot distribution in the top left corner
+        keys = ["emittance", "beta_x", "beta_y", "alpha_x", "alpha_y"]
+        fig3.text(
+            0.98,
+            0.98,
+            "\n".join([f"{key}: {results[key]}" for key in keys]),
+            verticalalignment="top",
+            horizontalalignment="right",
+        )
+
         save_name = save_name or "gpsr_training"
         if save_location is not None:
             fig.savefig(os.path.join(save_location, save_name) + ".png")
-            fig2.savefig(os.path.join(save_location, "loss_" + save_name) + ".png")
-            fig3.savefig(os.path.join(save_location, "dist_" + save_name) + ".png")
+            fig2.savefig(os.path.join(save_location, save_name + "_loss") + ".png")
+            fig3.savefig(os.path.join(save_location, save_name + "_dist") + ".png")
 
     results.update(
         {
