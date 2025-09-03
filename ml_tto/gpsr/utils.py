@@ -1,12 +1,203 @@
-import h5py
-import sys, os
+from typing import Tuple
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 
-
-import numpy as np
 from skimage.filters import threshold_triangle
+from lcls_tools.common.data.model_general_calcs import bmag
+import lightning as L
+from gpsr.modeling import GPSRLattice
+from cheetah.accelerator import Segment, CustomTransferMap
+
+
+def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
+    """
+    Compute second order moment related statistics of the reconstructed beam distribution
+
+    Parameters
+    ----------
+    reconstructed_beam: Beam
+        The reconstructed beam object.
+    gpsr_model: GPSRModel
+        The GPSR model used for the reconstruction.
+    design_twiss: list, optional
+        The design Twiss parameters. Should have the form [beta_x, alpha_x, beta_y, alpha_y].
+
+    Returns
+    -------
+    dict
+        A dictionary containing the computed beam statistics. The dictionary has the following elements
+        - norm_emit_x: Normalized emittance along x in m.rad
+        - norm_emit_y: Normalized emittance along y in m.rad
+        - beta_x: Beta function along x in m
+        - beta_y: Beta function along y in m
+        - alpha_x: Alpha function along x
+        - alpha_y: Alpha function along y
+        - screen_distribution: The distribution of the beam at the screen for each quadrupole focusing strength
+        - twiss_at_screen: The Twiss parameters at the screen for each quadrupole focusing strength
+        - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
+        - sigma_matrix: The covariance matrix of the reconstructed beam
+        - bmag: The bmag matching parameter for each quadrupole focusing strength
+
+    """
+
+    # track the reconstructed beam to the screen
+    final_beam = gpsr_model.lattice.lattice.track(reconstructed_beam)
+
+    # compute the twiss functions
+    twiss_at_screen = [
+        torch.stack(
+            (
+                final_beam.beta_x,
+                final_beam.alpha_x,
+                (1 + final_beam.alpha_x**2) / final_beam.beta_x,
+            )
+        )
+        .T.detach()
+        .numpy(),
+        torch.stack(
+            (
+                final_beam.beta_y,
+                final_beam.alpha_y,
+                (1 + final_beam.alpha_y**2) / final_beam.beta_y,
+            )
+        )
+        .T.detach()
+        .numpy(),
+    ]
+
+    if design_twiss is not None:
+        bmag_val = bmag(
+            [
+                final_beam.beta_x.detach().numpy(),
+                final_beam.alpha_x.detach().numpy(),
+                final_beam.beta_y.detach().numpy(),
+                final_beam.alpha_y.detach().numpy(),
+            ],
+            design_twiss,
+        )
+
+    # compute the rms sizes
+    rms_sizes = [
+        final_beam.sigma_x.detach().numpy(),
+        final_beam.sigma_y.detach().numpy(),
+    ]
+
+    # compute the reconstructed beam matrix
+    cov = torch.cov(reconstructed_beam.particles.T)
+    beam_matrix = (
+        torch.stack(
+            (
+                torch.triu(cov[:2, :2]).flatten()[
+                    torch.triu(cov[:2, :2]).flatten() != 0
+                ],
+                torch.triu(cov[2:4, 2:4]).flatten()[
+                    torch.triu(cov[2:4, 2:4]).flatten() != 0
+                ],
+            )
+        )
+        .detach()
+        .numpy()
+    )
+
+    results = {
+        "emittance": np.array(
+            [
+                reconstructed_beam.emittance_x.detach().cpu().numpy(),
+                reconstructed_beam.emittance_y.detach().cpu().numpy(),
+            ]
+        ).reshape(2, 1)
+        * 1e6,
+        "beta_x": reconstructed_beam.beta_x,
+        "beta_y": reconstructed_beam.beta_y,
+        "alpha_x": reconstructed_beam.alpha_x,
+        "alpha_y": reconstructed_beam.alpha_y,
+        "screen_distribution": final_beam,
+        "twiss_at_screen": twiss_at_screen,
+        "rms_beamsizes": rms_sizes,
+        "beam_matrix": beam_matrix,
+    }
+
+    if design_twiss is not None:
+        results["bmag"] = bmag_val
+    else:
+        results["bmag"] = None
+
+    return results
+
+
+class RMatLattice(GPSRLattice):
+    """
+    GPSR lattice that uses a transfer matrix to propagate the beam and a single screen to observe the beam.
+    """
+
+    def __init__(self, rmat, screen, fit_threshold=False):
+        """
+        Initializes the RMatLattice with a transfer matrix and a screen.
+
+        Parameters
+        ----------
+        rmat: torch.Tensor
+            The 6D transfer matrix (cheetah coordinate system) from the reconstruction location
+            to the diagnostic screen. Should have the shape (B, 6, 6) where B is the batch size
+            corresponding to the number of measurements
+        screen: Screen
+            The cheetah screen object for measurements.
+        fit_threshold: bool
+            Whether to fit the threshold parameter which clips the lower intensity of the beam image.
+
+        """
+        super().__init__()
+        self.fit_threshold = fit_threshold
+
+        if self.fit_threshold:
+            self.register_parameter(
+                "threshold", torch.nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+            )
+        self.lattice = Segment(
+            [
+                CustomTransferMap(rmat),
+                screen,
+            ]
+        )
+
+    def set_lattice_parameters(self, x: torch.Tensor) -> None:
+        pass
+
+    def track_and_observe(self, beam) -> Tuple[torch.Tensor, ...]:
+        """
+        tracks beam through the lattice and returns observations
+
+        Returns
+        -------
+        results: Tuple[Tensor]
+            Tuple of results from each measurement path
+        """
+        self.lattice.elements[-1].pixel_size = self.lattice.elements[-1].pixel_size.to(
+            beam.x
+        )
+        beam.particle_charges = torch.ones_like(beam.x).to(device=beam.x.device)
+        self.lattice.track(beam)
+
+        observations = self.lattice.elements[-1].reading.transpose(-1, -2)
+
+        # clip observations
+        if self.fit_threshold:
+            observations = torch.clip(observations - self.threshold * 1e-3, 0, None)
+
+        return tuple(observations.unsqueeze(0))
+
+
+class CustomLeakyReLU(torch.nn.Module):
+    def forward(self, x):
+        return 2 * torch.nn.LeakyReLU(negative_slope=0.1)(x)
+
+
+class MetricTracker(L.Callback):
+    def __init__(self):
+        self.training_loss = []
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        self.training_loss.append(trainer.callback_metrics["loss"].item())
 
 def image_snr(image: np.ndarray, threshold: float = None) -> float:
     """
