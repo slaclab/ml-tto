@@ -312,7 +312,7 @@ def gpsr_fit_quad_scan(
             ele.plot_data(ax=ax[i], add_labels=False)
             i += 1
 
-        fig.set_size_inches(10, 5)
+        fig.set_size_inches(len(quad_strengths), 5)
         fig.tight_layout()
 
         # plot loss curve
