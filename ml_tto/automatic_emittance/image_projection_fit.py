@@ -4,7 +4,14 @@ import warnings
 
 import numpy as np
 from numpy import ndarray
-from pydantic import ConfigDict, PositiveFloat, Field, PositiveInt, confloat
+from pydantic import (
+    ConfigDict,
+    NonNegativeFloat,
+    PositiveFloat,
+    Field,
+    PositiveInt,
+    confloat,
+)
 import scipy
 import scipy.ndimage
 import scipy.signal
@@ -289,6 +296,7 @@ def process_images(
 
 class ImageProjectionFitResult(ImageFitResult):
     projection_fit_method: MethodBase
+    total_intensity: NonNegativeFloat
     projection_fit_parameters: List[dict[str, float]]
     noise_std: NDArrayAnnotatedType = Field(
         description="Standard deviation of the noise in the data"
@@ -333,6 +341,35 @@ class MLProjectionFit(ProjectionFit):
             )
 
         self.model.profile_data = projection_data
+
+    def unnormalize_model_params(
+        self, method_params_dict: dict, projection_data: np.ndarray
+    ) -> dict:
+        """
+        Takes fitted and normalized params and returns them
+        to unnormalized values i.e the true fitted values of the distribution
+        """
+
+        projection_data_range = np.max(projection_data) - np.min(projection_data)
+        length = len(projection_data)
+        for key, val in method_params_dict.items():
+            if "sigma" in key:
+                true_fitted_val = val * length
+            elif "mean" in key:
+                true_fitted_val = val * (length - 1)
+            elif "offset" in key:
+                true_fitted_val = val * projection_data_range + np.min(projection_data)
+            elif "amplitude" in key:
+                true_fitted_val = val * projection_data_range
+            elif "skew" in key:
+                true_fitted_val = val
+            else:
+                raise RuntimeError(
+                    f"Unrecognized parameter {key} in unnormalize_model_params"
+                )
+            temp = {key: true_fitted_val}
+            method_params_dict.update(temp)
+        return method_params_dict
 
 
 ml_gaussian_parameters = ModelParameters(
@@ -396,6 +433,111 @@ class MLGaussianModel(GaussianModel):
 
         self.parameters.priors = priors
         return priors
+
+
+asymmetric_gaussian_parameters = ModelParameters(
+    name="Asymmetric Gaussian Parameters",
+    parameters={
+        "mean": Parameter(bounds=[0.01, 1.0]),
+        "sigma": Parameter(bounds=[0.01, 5.0]),
+        "amplitude": Parameter(bounds=[0.01, 1.0]),
+        "offset": Parameter(bounds=[0.01, 1.0]),
+        "skew": Parameter(bounds=[0.0, 0.01]),
+    },
+)
+
+
+class AsymmetricGaussianModel(MethodBase):
+    """
+    AsymmetricGaussianModel Class that finds initial parameter values for asymmetric gaussian
+    distribution and builds probability density functions for the
+    likelyhood a parameter to be that value based on those initial
+    parameter values. Passing this class the variable profile_data
+    automatically updates the initial values and and probability
+    density functions to match that data.
+    """
+
+    parameters: ModelParameters = asymmetric_gaussian_parameters
+
+    def find_init_values(self) -> dict:
+        """Fit data without optimization, return values."""
+
+        data = self._profile_data
+        x = np.linspace(0, 1, len(data))
+        offset = data.min() + 0.01
+        amplitude = data.max() - offset
+        skew = 0.01
+        weighted_mean = np.average(x, weights=data)
+        weighted_sigma = np.sqrt(np.cov(x, aweights=data))
+
+        init_values = {
+            "mean": weighted_mean,
+            "sigma": weighted_sigma,
+            "amplitude": amplitude,
+            "offset": offset,
+            "skew": skew,
+        }
+        print(init_values)
+
+        self.parameters.initial_values = init_values
+        return init_values
+
+    def find_priors(self, **kwargs) -> dict:
+        """
+        Do initial guesses based on data and make distribution from that guess.
+        """
+        init_values = self.find_init_values()
+        amplitude_mean = init_values["amplitude"]
+        amplitude_var = 0.1
+        amplitude_alpha = (amplitude_mean**2) / amplitude_var
+        amplitude_beta = amplitude_mean / amplitude_var
+        amplitude_prior = gamma(amplitude_alpha, loc=0, scale=1 / amplitude_beta)
+
+        # Creating a normal distribution of points around the inital mean.
+        mean_prior = norm(init_values["mean"], 0.1)
+        sigma_prior = uniform(1e-8, 5.0)
+
+        # Creating a normal distribution of points around initial offset.
+        offset_prior = norm(init_values["offset"], 0.5)
+        skew_prior = norm(init_values["skew"], 1.0)
+        priors = {
+            "mean": mean_prior,
+            "sigma": sigma_prior,
+            "amplitude": amplitude_prior,
+            "offset": offset_prior,
+            "skew": skew_prior,
+        }
+
+        self.parameters.priors = priors
+        return priors
+
+    def _forward(self, x: np.array, method_parameter_list: np.array):
+        # Load distribution parameters
+        # needs to be array for scipy.minimize
+        mean = method_parameter_list[0]
+        sigma = method_parameter_list[1]
+        amplitude = method_parameter_list[2]
+        offset = method_parameter_list[3]
+        skew = method_parameter_list[4]
+
+        asym = 1 + np.sign(x - mean) * skew
+        print(f"parameters are: {mean}, {sigma}, {amplitude}, {offset}, {skew}")
+        if np.any(np.isnan(asym)):
+            raise RuntimeError(
+                f"NaN in asymmetric factor calculation, parameters are: {mean}, {sigma}, {amplitude}, {offset}, {skew}"
+            )
+        return (
+            np.sqrt(2 * np.pi) * amplitude * norm.pdf((x - mean) / (asym * sigma))
+            + offset
+        )
+
+    def _log_prior(self, method_parameter_list: np.ndarray) -> float:
+        return np.sum(
+            [
+                prior.logpdf(method_parameter_list[i])
+                for i, prior in enumerate(self.parameters.priors)
+            ]
+        )
 
 
 class ImageProjectionFit(ImageProjectionFit):

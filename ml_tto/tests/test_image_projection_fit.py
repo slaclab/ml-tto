@@ -5,13 +5,25 @@ import pytest
 from ml_tto.automatic_emittance.image_projection_fit import (
     ImageProjectionFit,
     RecursiveImageProjectionFit,
+    MLProjectionFit,
+    AsymmetricGaussianModel,
 )
 from ml_tto.automatic_emittance.plotting import plot_image_projection_fit
 
 
 class TestImageProjectionFit:
     @pytest.mark.parametrize(
-        "image_projection_fit", [ImageProjectionFit(), RecursiveImageProjectionFit()]
+        "image_projection_fit",
+        [
+            ImageProjectionFit(),
+            RecursiveImageProjectionFit(),
+            RecursiveImageProjectionFit(
+                projection_fit=MLProjectionFit(
+                    model=AsymmetricGaussianModel(use_priors=True),
+                    relative_filter_size=0.01,
+                )
+            ),
+        ],
     )
     def test_image_projection_fits(self, image_projection_fit):
         test_image = np.zeros((100, 100))
@@ -35,7 +47,9 @@ class TestImageProjectionFit:
             ],
         )
 
-        param_keys = {"amplitude", "mean", "sigma", "offset"}
+        param_keys = (
+            image_projection_fit.projection_fit.model.parameters.parameters.keys()
+        )
         for i in range(2):
             fit_params = result.projection_fit_parameters[i]
             # test to make sure the correct keys are returned

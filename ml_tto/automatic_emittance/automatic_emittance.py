@@ -15,14 +15,10 @@ from typing import Callable, Optional, Tuple
 from pydantic import PositiveFloat, PositiveInt
 import time
 
-from gpsr.data_processing import process_images
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 from ml_tto.gpsr.lcls_tools import process_automatic_emittance_measurement
 from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
-
-from skimage.filters import threshold_triangle
-from scipy.ndimage import median_filter, gaussian_filter
 
 
 class MLQuadScanEmittance(QuadScanEmittance):
@@ -371,10 +367,16 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
                 save_name=self.save_name,
             )
 
+            emittance = np.array(
+                [
+                    gpsr_result["norm_emittance_x"],
+                    gpsr_result["norm_emittance_y"],
+                ]
+            ).reshape(2, 1)
             formatted_result = EmittanceMeasurementResult(
                 quadrupole_focusing_strengths=[processed_data["quad_strengths"]] * 2,
                 quadrupole_pv_values=[processed_data["quad_pv_values"]] * 2,
-                emittance=gpsr_result["emittance"],
+                emittance=emittance,
                 bmag=gpsr_result["bmag"],
                 twiss_at_screen=gpsr_result["twiss_at_screen"],
                 rms_beamsizes=gpsr_result["rms_beamsizes"],
