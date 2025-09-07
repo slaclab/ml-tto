@@ -1,20 +1,18 @@
 import warnings
 import traceback
 import time
+from typing import Callable, Optional, Tuple
 
 import numpy as np
+from pydantic import PositiveFloat, PositiveInt
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
-from lcls_tools.common.measurements.emittance_measurement import (
+
+from ml_tto.automatic_emittance.emittance import (
     QuadScanEmittance,
     EmittanceMeasurementResult,
 )
-from typing import Callable, Optional, Tuple
-
-from pydantic import PositiveFloat, PositiveInt
-import time
-
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 from ml_tto.gpsr.lcls_tools import process_automatic_emittance_measurement
