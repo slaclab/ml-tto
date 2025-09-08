@@ -9,7 +9,7 @@ test_file_dir = os.path.dirname(os.path.abspath(__file__))
 from ml_tto.gpsr.lcls_tools import (
     get_lcls_tools_data_from_file,
     hdf5_group_to_dict,
-    process_automatic_emittance_measurement,
+    process_automatic_emittance_measurement_data,
 )
 from lcls_tools.common.measurements.emittance_measurement import (
     EmittanceMeasurementResult,
@@ -68,7 +68,7 @@ class TestGPSRLCLSTools:
 
         result = EmittanceMeasurementResult(**obj)
 
-        output = process_automatic_emittance_measurement(
+        output = process_automatic_emittance_measurement_data(
             result, n_stds=3, max_pixels=1e5, median_filter_size=3
         )
 
