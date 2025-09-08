@@ -3,7 +3,7 @@ from ml_tto.gpsr.utils import image_snr
 import numpy as np
 
 
-class TestUtils:
+class TestGPSRUtils:
     @pytest.mark.parametrize("scale", [0.1, 1.0, 10.0])
     def test_image_snr(self, scale):
         img = np.zeros((100, 100))
