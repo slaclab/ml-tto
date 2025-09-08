@@ -42,24 +42,25 @@ def get_lcls_tools_data(
 
     # depending on the context `info["quadrupole_pv_values"]` could be a list or a dict
     if isinstance(info["quadrupole_pv_values"], dict):
-        quad_pv_values = np.array(
-            [
-                ele
-                for ele in list(info["quadrupole_pv_values"]["0"])
-                + list(info["quadrupole_pv_values"]["1"])
-            ]
+        quad_pv_values = np.unique(
+            np.array(
+                [
+                    ele
+                    for ele in list(info["quadrupole_pv_values"]["0"])
+                    + list(info["quadrupole_pv_values"]["1"])
+                ]
+            )
         )
     elif isinstance(info["quadrupole_pv_values"], list):
-        quad_pv_values = np.array(
-            [
-                ele
-                for ele in list(info["quadrupole_pv_values"][0])
-                + list(info["quadrupole_pv_values"][1])
-            ]
+        quad_pv_values = np.unique(
+            np.array(
+                [
+                    ele
+                    for ele in list(info["quadrupole_pv_values"][0])
+                    + list(info["quadrupole_pv_values"][1])
+                ]
+            )
         )
-
-    idx_sort = np.argsort(quad_pv_values)
-    quad_pv_values = quad_pv_values[idx_sort]
 
     quad_focusing_strengths = bdes_to_kmod(
         e_tot=energy, effective_length=l_eff, bdes=quad_pv_values
@@ -71,6 +72,9 @@ def get_lcls_tools_data(
             for ele in quad_pv_values
         ]
     ).squeeze()
+
+    # transpose for proper reconstruction
+    images = np.transpose(images, (0, 2, 1))
 
     quad_x_rmats = build_quad_rmat(
         np.array(quad_focusing_strengths),
