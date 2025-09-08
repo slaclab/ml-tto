@@ -367,8 +367,8 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
 
             emittance = np.array(
                 [
-                    gpsr_result["norm_emittance_x"],
-                    gpsr_result["norm_emittance_y"],
+                    gpsr_result["emittance_x"],
+                    gpsr_result["emittance_y"],
                 ]
             ).reshape(2, 1)
             formatted_result = EmittanceMeasurementResult(

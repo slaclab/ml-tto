@@ -7,6 +7,7 @@ from lcls_tools.common.data.model_general_calcs import bmag
 import lightning as L
 from gpsr.modeling import GPSRLattice
 from cheetah.accelerator import Segment, CustomTransferMap
+from ml_tto.gpsr.analysis import compute_halo_metric
 
 
 def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
@@ -26,8 +27,10 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
     -------
     dict
         A dictionary containing the computed beam statistics. The dictionary has the following elements
-        - norm_emit_x: Normalized emittance along x in m.rad
-        - norm_emit_y: Normalized emittance along y in m.rad
+        - norm_emittance_x: Normalized emittance along x in mm.mrad
+        - norm_emittance_y: Normalized emittance along y in mm.mrad
+        - emittance_x: Geometric emittance along x in mm.mrad
+        - emittance_y: Geometric emittance along y in mm.mrad
         - beta_x: Beta function along x in m
         - beta_y: Beta function along y in m
         - alpha_x: Alpha function along x
@@ -37,6 +40,8 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
         - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
         - sigma_matrix: The covariance matrix of the reconstructed beam
         - bmag: The bmag matching parameter for each quadrupole focusing strength
+        - halo_x: Normalized halo parameter as defined by `ml_tto.gpsr.analysis.compute_halo_metric`
+        - halo_y: Normalized halo parameter as defined by `ml_tto.gpsr.analysis.compute_halo_metric`
 
     """
 
@@ -100,21 +105,22 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
     )
 
     results = {
-        "emittance": np.array(
-            [
-                reconstructed_beam.emittance_x.detach().cpu().numpy(),
-                reconstructed_beam.emittance_y.detach().cpu().numpy(),
-            ]
-        ).reshape(2, 1)
+        "emittance_x": float(reconstructed_beam.emittance_x.detach()) * 1e6,
+        "emittance_y": float(reconstructed_beam.emittance_y.detach()) * 1e6,
+        "norm_emittance_x": float(reconstructed_beam.normalized_emittance_x.detach())
         * 1e6,
-        "beta_x": reconstructed_beam.beta_x,
-        "beta_y": reconstructed_beam.beta_y,
-        "alpha_x": reconstructed_beam.alpha_x,
-        "alpha_y": reconstructed_beam.alpha_y,
+        "norm_emittance_y": float(reconstructed_beam.normalized_emittance_y.detach())
+        * 1e6,
+        "beta_x": float(reconstructed_beam.beta_x.detach()),
+        "beta_y": float(reconstructed_beam.beta_y.detach()),
+        "alpha_x": float(reconstructed_beam.alpha_x.detach()),
+        "alpha_y": float(reconstructed_beam.alpha_y.detach()),
         "screen_distribution": final_beam,
         "twiss_at_screen": twiss_at_screen,
         "rms_beamsizes": rms_sizes,
         "beam_matrix": beam_matrix,
+        "halo_x": compute_halo_metric(reconstructed_beam, slice(None, 2)),
+        "halo_y": compute_halo_metric(reconstructed_beam, slice(2, 4)),
     }
 
     if design_twiss is not None:
@@ -199,10 +205,11 @@ class MetricTracker(L.Callback):
     def on_train_epoch_end(self, trainer, pl_module):
         self.training_loss.append(trainer.callback_metrics["loss"].item())
 
+
 def image_snr(image: np.ndarray, threshold: float = None) -> float:
     """
     Compute the signal-to-noise ratio (SNR) of a 2D image.
-    
+
     Parameters
     ----------
     image : np.ndarray
@@ -210,35 +217,36 @@ def image_snr(image: np.ndarray, threshold: float = None) -> float:
     threshold : float, optional
         Pixel threshold to separate signal from noise.
         If None, use the triangle threshold method.
-    
+
     Returns
     -------
     snr : float
         Signal-to-noise ratio (mean signal / std noise).
     """
     img = np.asarray(image)
-    
+
     if img.ndim != 2:
         raise ValueError("Input must be a 2D array.")
-    
+
     pixels = img.ravel()
-    
+
     # Automatic threshold using triangle method if not provided
     if threshold is None:
         threshold = threshold_triangle(pixels)
-    
+
     # Define signal and noise masks
     signal_pixels = pixels[pixels > threshold]
-    noise_pixels  = pixels[pixels <= threshold]
-    
+    noise_pixels = pixels[pixels <= threshold]
+
     if len(signal_pixels) == 0 or len(noise_pixels) == 0:
         raise ValueError("Thresholding failed: no signal or no noise pixels detected.")
-    
+
     # Compute mean signal and std noise
     mean_signal = signal_pixels.mean()
-    std_noise   = noise_pixels.std()
-    
+    std_noise = noise_pixels.std()
+
     return mean_signal / std_noise if std_noise > 0 else np.inf
+
 
 def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
     """

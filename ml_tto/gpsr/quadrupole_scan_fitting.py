@@ -20,6 +20,7 @@ from ml_tto.gpsr.utils import (
     CustomLeakyReLU,
     MetricTracker,
 )
+from ml_tto.gpsr.visualization import visualize_quad_scan_result
 
 
 def gpsr_fit_file(
@@ -195,8 +196,10 @@ def gpsr_fit_quad_scan(
     dict
         A dictionary containing the results of the fitting process.
         The dictionary has the following elements
-        - norm_emit_x: Normalized emittance along x in m.rad
-        - norm_emit_y: Normalized emittance along y in m.rad
+        - norm_emit_x: Normalized emittance along x in mm.mrad
+        - norm_emit_y: Normalized emittance along y in mm.mrad
+        - emittance_x: Geometric emittance along x in mm.mrad
+        - emittance_y: Geometric emittance along y in mm.mrad
         - beta_x: Beta function along x in m
         - beta_y: Beta function along y in m
         - alpha_x: Alpha function along x
@@ -273,7 +276,7 @@ def gpsr_fit_quad_scan(
     # run the training
     start = time.time()
     trainer.fit(model=litgpsr, train_dataloaders=train_loader)
-    print(time.time() - start)
+    print("Runtime:", time.time() - start)
 
     # get the reconstructed beam distribution
     reconstructed_beam = litgpsr.gpsr_model.beam_generator()
@@ -295,48 +298,13 @@ def gpsr_fit_quad_scan(
     results = get_beam_stats(fractional_beam, gpsr_model, design_twiss)
 
     if visualize or save_location is not None:
-        # compare the predicted measurements with the training data
-        fig, ax = plt.subplots(3, len(quad_strengths), sharex="all", sharey="all")
-
-        # plot training data
-        train_dset.plot_data(
-            overlay_data=pred_dset,
-            overlay_kwargs={"levels": [0.01, 0.25, 0.75, 0.9], "cmap": "Greys"},
-            filter_size=0,
-            ax=ax[0],
-            add_labels=False,
-        )
-
-        i = 1
-        for ele in [train_dset, pred_dset]:
-            ele.plot_data(ax=ax[i], add_labels=False)
-            i += 1
-
-        fig.set_size_inches(len(quad_strengths), 5)
-        fig.tight_layout()
-
-        # plot loss curve
-        fig2, ax2 = plt.subplots()
-        ax2.semilogy(cb.training_loss)
-        ax2.set_xlabel("Epoch")
-        ax2.set_ylabel("Training Loss")
-
-        # plot distribution
-        fig3, ax = fractional_beam.plot_distribution(dimensions=("x", "px", "y", "py"))
-
-        # add distribution statistics to plot distribution in the top left corner
-        keys = ["emittance", "beta_x", "beta_y", "alpha_x", "alpha_y"]
-        fig3.text(
-            0.98,
-            0.98,
-            "\n".join([f"{key}: {results[key]}" for key in keys]),
-            verticalalignment="top",
-            horizontalalignment="right",
+        fig1, fig2, fig3 = visualize_quad_scan_result(
+            quad_strengths, train_dset, pred_dset, cb, results, fractional_beam
         )
 
         save_name = save_name or "gpsr_training"
         if save_location is not None:
-            fig.savefig(os.path.join(save_location, save_name) + ".png")
+            fig1.savefig(os.path.join(save_location, save_name + "_pred") + ".png")
             fig2.savefig(os.path.join(save_location, save_name + "_loss") + ".png")
             fig3.savefig(os.path.join(save_location, save_name + "_dist") + ".png")
 
