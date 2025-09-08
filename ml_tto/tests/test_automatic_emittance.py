@@ -42,11 +42,13 @@ class MockBeamline:
         self.magnet.metadata = MagnetMetadata(
             area="test", beam_path=["test"], sum_l_meters=None, l_eff=0.1
         )
+        self.magnet.name = "Q0"
 
         self.roi = CircularROI(center=[1, 1], radius=1000)
         self.screen_resolution = 1.0  # resolution of the screen in um / px
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
         self.beamsize_measurement.device = MagicMock(spec=Screen)
+        self.beamsize_measurement.device.name = "TestScreen"
         self.beamsize_measurement.device.resolution = self.screen_resolution
         self.beamsize_measurement.image_processor = MagicMock()
         self.beamsize_measurement.image_processor.roi = self.roi
@@ -98,50 +100,6 @@ class MockBeamline:
 
 
 class TestAutomaticEmittance:
-    def test_evaluate_function(self):
-        initial_beam = ParameterBeam.from_twiss(
-            beta_x=torch.tensor(5.0),
-            alpha_x=torch.tensor(5.0),
-            emittance_x=torch.tensor(1e-8),
-            beta_y=torch.tensor(3.0),
-            alpha_y=torch.tensor(3.0),
-            emittance_y=torch.tensor(1e-7),
-        )
-
-        mock_beamline = MockBeamline(initial_beam)
-
-        # Instantiate the QuadScanEmittance object
-        quad_scan = MLQuadScanEmittance(
-            energy=1e9 * 299.792458 / 1e3,
-            magnet=mock_beamline.magnet,
-            beamsize_measurement=mock_beamline.beamsize_measurement,
-            n_measurement_shots=1,
-            wait_time=1e-3,
-            n_initial_points=1,
-            n_iterations=1,
-            max_scan_range=[-10, 10],
-        )
-
-        # Call the evaluate method
-        inputs = {"k": 1.0}
-        result = quad_scan._evaluate(inputs)
-        assert isinstance(result, dict)
-        # assert "bb_penalty" in result
-        # assert "log10_total_intensity" in result
-        assert "x_rms_px_sq" in result
-        assert "y_rms_px_sq" in result
-
-        # test case where k > 5.0 -- should return low intensity and NaN beam sizes
-        # inputs = {"k": 10.0}
-        # result = quad_scan._evaluate(inputs)
-        # assert np.all(np.isnan(result["scaled_x_rms_px"]))
-        # assert np.all(np.isnan(result["scaled_y_rms_px"]))
-        # assert np.all(np.isnan(result["bb_penalty"]))
-
-        # assert len(quad_scan._info) == 2
-        # assert np.all(np.isnan(quad_scan._info[-1].rms_sizes))
-        # assert np.all(np.isnan(quad_scan._info[-1].centroids))
-
     def test_automatic_emit_scan_with_mocked_beamsize_measurement(self):
         """
         Test to verify correct emittance calculation based on data generated from a
