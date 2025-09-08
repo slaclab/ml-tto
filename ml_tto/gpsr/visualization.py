@@ -75,28 +75,37 @@ def visualize_quad_scan_result(
     fig3, ax = fractional_beam.plot_distribution(dimensions=("x", "px", "y", "py"))
 
     # add distribution statistics to plot distribution in the top left corner
+    # TODO: compute and display twiss parameters at nominal quad strength
     labels = {
         "norm_emittance_x": r"$\epsilon_x$",
         "norm_emittance_y": r"$\epsilon_y$",
-        "beta_x": r"$\beta_x$",
-        "beta_y": r"$\beta_y$",
-        "alpha_x": r"$\alpha_x$",
-        "alpha_y": r"$\alpha_y$",
+        # "beta_x": r"$\beta_x$",
+        # "beta_y": r"$\beta_y$",
+        # "alpha_x": r"$\alpha_x$",
+        # "alpha_y": r"$\alpha_y$",
         "halo_x": r"$\text{Halo}_x$",
         "halo_y": r"$\text{Halo}_y$",
     }
+    units = {
+        "norm_emittance_x": r"$[mm \cdot mrad]$",
+        "norm_emittance_y": r"$[mm \cdot mrad]$",
+        "beta_x": r"$[m]$",
+        "beta_y": r"$[m]$",
+        "alpha_x": r"[]",
+        "alpha_y": r"[]",
+        "halo_x": r"[]",
+        "halo_y": r"[]",
+    }
+
     info_str = ""
     for name, lbl in labels.items():
         try:
-            if name in ["norm_emittance_x", "norm_emittance_y"]:
-                info_str += f"{lbl}: {stats[name] * 1e6:<.4f}\n"
-            else:
-                info_str += f"{lbl}: {stats[name]:<.4f}\n"
+            info_str += f"{lbl}: {stats[name]:<.4f} {units[name]}\n"
         except KeyError:
             pass
 
     fig3.text(
-        0.7,
+        0.6,
         0.9,
         info_str,
         verticalalignment="top",
