@@ -8,6 +8,7 @@ test_file_dir = os.path.dirname(os.path.abspath(__file__))
 
 from ml_tto.gpsr.lcls_tools import (
     get_lcls_tools_data_from_file,
+    get_lcls_tools_data,
     hdf5_group_to_dict,
     process_automatic_emittance_measurement_data,
 )
@@ -69,7 +70,10 @@ class TestGPSRLCLSTools:
         result = EmittanceMeasurementResult(**obj)
 
         output = process_automatic_emittance_measurement_data(
-            result, n_stds=3, max_pixels=1e5, median_filter_size=3
+            get_lcls_tools_data(result.model_dump()),
+            n_stds=3,
+            max_pixels=1e5,
+            median_filter_size=3,
         )
 
         n_quad_strengths = output["quad_strengths"].shape[0]

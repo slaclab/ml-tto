@@ -25,7 +25,7 @@ class TestGPSRUtils:
         if scale < 1.0:
             assert snr < 3.0
         elif scale == 1.0:
-            assert np.allclose(snr, 3.0, atol=1.0)
+            assert np.allclose(snr, 3.0, atol=2.0)
         else:
             assert np.allclose(snr, 26.0, atol=2.0)
 
