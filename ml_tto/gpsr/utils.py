@@ -3,6 +3,7 @@ import torch
 import numpy as np
 
 from skimage.filters import threshold_triangle
+from scipy.ndimage import median_filter
 from lcls_tools.common.data.model_general_calcs import bmag
 import lightning as L
 from gpsr.modeling import GPSRLattice
@@ -206,9 +207,23 @@ class MetricTracker(L.Callback):
         self.training_loss.append(trainer.callback_metrics["loss"].item())
 
 
-def image_snr(image: np.ndarray, threshold: float = None) -> float:
+def image_snr(
+    image: np.ndarray,
+    threshold: float = None,
+    return_diagnostic_images=False,
+    median_filter_size: int = 3,
+) -> float:
     """
     Compute the signal-to-noise ratio (SNR) of a 2D image.
+    Applies a median filter to the image before computing
+    the SNR to remove the influence of hot pixels.
+
+    Notes:
+    ------
+    - Using a median filter with a size of 3x3 is recommended to
+    effectively reduce the impact of hot pixels on the SNR calculation.
+    - Images with no signal, ie. just noise, will return an SNR of
+    approx 0.0-2.0, don't trust SNR values below 3.0 as valid signal.
 
     Parameters
     ----------
@@ -217,13 +232,16 @@ def image_snr(image: np.ndarray, threshold: float = None) -> float:
     threshold : float, optional
         Pixel threshold to separate signal from noise.
         If None, use the triangle threshold method.
+    return_diagnostic_images : bool, optional
+        If True, also return the signal and noise images.
 
     Returns
     -------
     snr : float
         Signal-to-noise ratio (mean signal / std noise).
     """
-    img = np.asarray(image)
+    img = np.copy(image)
+    img = median_filter(img, size=median_filter_size)
 
     if img.ndim != 2:
         raise ValueError("Input must be a 2D array.")
@@ -245,7 +263,16 @@ def image_snr(image: np.ndarray, threshold: float = None) -> float:
     mean_signal = signal_pixels.mean()
     std_noise = noise_pixels.std()
 
-    return mean_signal / std_noise if std_noise > 0 else np.inf
+    snr = mean_signal / std_noise if std_noise > 0 else np.inf
+
+    if return_diagnostic_images:
+        return (
+            snr,
+            np.where(img > threshold, img, 0),
+            np.where(img <= threshold, img, 0),
+        )
+    else:
+        return snr
 
 
 def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):

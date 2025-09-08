@@ -15,7 +15,10 @@ from ml_tto.automatic_emittance.emittance import (
 )
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
-from ml_tto.gpsr.lcls_tools import process_automatic_emittance_measurement
+from ml_tto.gpsr.lcls_tools import (
+    get_lcls_tools_data,
+    process_automatic_emittance_measurement_data,
+)
 from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
 
 
@@ -340,11 +343,12 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
         initial_result = super().calculate_emittance()
 
         try:
-            processed_data = process_automatic_emittance_measurement(
-                initial_result,
+            processed_data = process_automatic_emittance_measurement_data(
+                get_lcls_tools_data(initial_result.model_dump()),
                 n_stds=self.n_stds,
                 max_pixels=self.max_pixels,
                 median_filter_size=self.median_filter_size,
+                threshold_multiplier=2.0,
             )
 
             print(type(processed_data["images"]))

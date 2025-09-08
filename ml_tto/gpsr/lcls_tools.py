@@ -6,6 +6,7 @@ from gpsr.data_processing import process_images
 from lcls_tools.common.measurements.emittance_measurement import (
     EmittanceMeasurementResult,
 )
+from ml_tto.gpsr.utils import image_snr
 
 
 def hdf5_group_to_dict(hdf5_object):
@@ -66,15 +67,19 @@ def get_lcls_tools_data(
         e_tot=energy, effective_length=l_eff, bdes=quad_pv_values
     )
 
-    images = np.array(
+    processed_images = np.array(
         [
             metadata["image_data"][str(ele)]["processed_images"][:]
             for ele in quad_pv_values
         ]
     ).squeeze()
+    raw_images = np.array(
+        [metadata["image_data"][str(ele)]["raw_images"][:] for ele in quad_pv_values]
+    ).squeeze()
 
     # transpose for proper reconstruction
-    images = np.transpose(images, (0, 2, 1))
+    processed_images = np.transpose(processed_images, (0, 2, 1))
+    raw_images = np.transpose(raw_images, (0, 2, 1))
 
     quad_x_rmats = build_quad_rmat(
         np.array(quad_focusing_strengths),
@@ -97,50 +102,40 @@ def get_lcls_tools_data(
         "energy": energy,
         "rmat": rmats,
         "resolution": resolution,
-        "images": images,
+        "images": processed_images,
+        "raw_images": raw_images,
         "design_twiss": design_twiss,
     }
 
 
-def process_automatic_emittance_measurement(
-    data: EmittanceMeasurementResult,
-    n_stds: float,
-    max_pixels: int,
-    median_filter_size: int,
+def process_automatic_emittance_measurement_data(
+    data: dict,
+    n_stds: float = 8.0,
+    max_pixels: int = 1e5,
+    median_filter_size: int = 3,
+    min_signal_to_noise_ratio: float = 4.0,
+    threshold_multiplier: float = 1.0,
 ):
     """
     Extract and process data from automatic emittance measurement results.
     """
-
-    data = get_lcls_tools_data(data.model_dump())
-
     resolution = data["resolution"]
     images = data["images"]
+    raw_images = data["raw_images"]
     design_twiss = data["design_twiss"]
 
-    # filter data by signal to noise ratio of images via gaussian filter
-    # test_images = np.copy(images)
-    # test_images = gaussian_filter(
-    #    test_images,
-    #    sigma=10,
-    #    axes=[-2, -1],
-    # )
-    # test_images -= np.min(test_images, axis=0)
+    # calculate signal to noise ratio for the raw images
+    snr_values = np.array([image_snr(img) for img in raw_images])
+    snr_condition = snr_values > min_signal_to_noise_ratio
 
-    # snr_values = np.array([image_snr(img) for img in images])
-    # snr_condition = np.max(np.max(test_images,axis=-1),axis=-1) > 5.0# self.image_min_signal_to_noise_ratio
+    print(
+        f"{np.count_nonzero(snr_condition)} / {len(snr_condition)} images satisfied the signal to noise limit of {min_signal_to_noise_ratio}"
+    )
 
-    # print(
-    #    f"{np.count_nonzero(snr_condition)} / {
-    #        len(snr_condition)
-    #    } satisfied the signal to noise limit of {
-    #        self.image_min_signal_to_noise_ratio
-    #    }"
-    # )
-
-    quad_strengths = data["quad_strengths"]
-    rmat = data["rmat"]
-    quad_pv_values = data["quad_pv_values"]
+    images = images[snr_condition]
+    quad_strengths = data["quad_strengths"][snr_condition]
+    rmat = data["rmat"][snr_condition]
+    quad_pv_values = data["quad_pv_values"][snr_condition]
     energy = data["energy"]
 
     # process images by centering, cropping, and normalizing
@@ -151,7 +146,7 @@ def process_automatic_emittance_measurement(
         center=True,
         n_stds=n_stds,
         max_pixels=max_pixels,
-        threshold_multiplier=1.1,  # multiply threshold factor to remove speckles
+        threshold_multiplier=threshold_multiplier,  # multiply threshold factor to remove speckles
         median_filter_size=median_filter_size,
     )
     resolution = results["pixel_size"]
