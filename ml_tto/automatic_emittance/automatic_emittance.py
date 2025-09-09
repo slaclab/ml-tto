@@ -148,6 +148,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
                 return results
             except Exception as e:
+                # TODO: change the exception type to something more specific -- beamline error etc.
                 last_exception = e
 
                 print(
@@ -183,7 +184,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            for _ in range(n_iterations):
+            for i in range(n_iterations):
+                print(f"Iteration {i} for dimension {dim_name}")
                 self.update_xopt_object(self.get_vocs(dim_name))
 
                 if self.visualize_bo:
@@ -222,7 +224,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
             self.X.evaluate_data({"k": initial_scan_values})
 
             # run iterations for x/y -- ignore warnings from UCB generator
+            print("Running x scans")
             self.run_iterations("x", self.n_iterations)
+            print("Running y scans")
             self.run_iterations("y", self.n_iterations)
 
         except Exception as e:
@@ -350,9 +354,6 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
                 median_filter_size=self.median_filter_size,
                 threshold_multiplier=2.0,
             )
-
-            print(type(processed_data["images"]))
-            print(processed_data["images"].shape)
 
             gpsr_result = gpsr_fit_quad_scan(
                 processed_data["quad_strengths"],

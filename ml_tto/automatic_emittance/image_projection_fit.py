@@ -477,7 +477,6 @@ class AsymmetricGaussianModel(MethodBase):
             "offset": offset,
             "skew": skew,
         }
-        print(init_values)
 
         self.parameters.initial_values = init_values
         return init_values
