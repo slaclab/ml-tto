@@ -68,7 +68,6 @@ class ScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     name: str = "beam_profile"
-    device: Screen
     image_processor: Optional[ImageProcessor] = ImageProcessor()
     beam_fit: ImageFit = ImageProjectionFit()
     fit_profile: bool = True
@@ -85,7 +84,7 @@ class ScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
         """
         images = []
         while len(images) < n_shots:
-            images.append(self.device.image)
+            images.append(self.beam_profile_device.image)
             # TODO: need to add a wait statement in here for images to update
 
         processed_images = [

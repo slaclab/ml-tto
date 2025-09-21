@@ -78,7 +78,7 @@ def plot_screen_profile_measurement(measurement, n_stds: float = 4.0):
     """
 
     result = measurement.beam_fit.fit_image(
-        measurement.image_processor.auto_process(measurement.device.image)
+        measurement.image_processor.auto_process(measurement.beam_profile_device.image)
     )
 
     return plot_image_projection_fit(result, n_stds=n_stds)

@@ -243,7 +243,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         for ele in self._info:
             beam_sizes.append(
                 np.mean(ele.rms_sizes, axis=0)
-                * self.beamsize_measurement.device.resolution
+                * self.beamsize_measurement.beam_profile_device.resolution
                 * 1e-6
             )
 
@@ -259,7 +259,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
             # crop the scans using concavity filter and max beam size filter
             cutoff_size = (
                 self._get_cutoff_beamsize(dim_names[i])
-                * self.beamsize_measurement.device.resolution
+                * self.beamsize_measurement.beam_profile_device.resolution
                 * 1e-6
             )
             sv_cropped, bs_cropped = crop_scan(
@@ -323,7 +323,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         return np.max(
             (
                 self.beamsize_cutoff_max * np.sqrt(min_size),
-                self.min_beamsize_cutoff / self.beamsize_measurement.device.resolution,
+                self.min_beamsize_cutoff / self.beamsize_measurement.beam_profile_device.resolution,
             )
         )
 

@@ -40,10 +40,10 @@ def quad_scan_optics(
         )
         rmats = model.get_rmat(
             from_device=magnet.name,
-            to_device=measurement.device.name,
+            to_device=measurement.beam_profile_device.name,
         )
-        twiss = model.get_twiss(measurement.device.name)
-        return {"rmats": rmats, "design_twiss": twiss}
+        twiss = model.get_twiss(measurement.beam_profile_device.name)
+        return {"rmat": rmats, "design_twiss": twiss}
     except ModuleNotFoundError:
         raise ImportError(
             "meme not found, cannot get optics, optics must be specified explicitly"
@@ -341,7 +341,7 @@ class QuadScanEmittance(Measurement):
             {
                 "metadata": self.model_dump()
                 | {
-                    "resolution": self.beamsize_measurement.device.resolution,
+                    "resolution": self.beamsize_measurement.beam_profile_device.resolution,
                     "image_data": {
                         str(sval): ele.model_dump()
                         for sval, ele in zip(self.scan_values, self._info)
@@ -364,19 +364,19 @@ class QuadScanEmittance(Measurement):
         """
         time.sleep(self.wait_time)
 
-        result = self.beamsize_measurement.measure(self.n_measurement_shots)
+        result = self.beamsize_measurement.measure()
         self._info += [result]
 
         # get transport matrix and design twiss values from meme
         # TODO: get settings from arbitrary methods (ie. not meme)
         if not self.rmat_given:
             optics = quad_scan_optics(
-                self.magnet.name,
-                self.beamsize_measurement.device.name,
+                self.magnet,
+                self.beamsize_measurement,
                 self.physics_model,
             )
             rmat = optics["rmat"]
-            self.rmat.append(np.stack([rmat[0:2][0:2], rmat[2:4][2:4]]))
+            self.rmat.append(np.stack([rmat[:2, :2], rmat[2:4, 2:4]]))
             if not self.design_twiss:
                 self.design_twiss = optics["design_twiss"]
 
@@ -388,7 +388,7 @@ class QuadScanEmittance(Measurement):
         for result in self._info:
             beam_sizes.append(
                 np.mean(result.rms_sizes, axis=0)
-                * self.beamsize_measurement.device.resolution
+                * self.beamsize_measurement.beam_profile_device.resolution
                 * 1e-6
             )
 
