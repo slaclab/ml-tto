@@ -19,9 +19,7 @@ class TestScreenProfileMeasurement:
         screen_device.image = test_image
 
         # Create a ScreenBeamProfileMeasurement instance
-        measurement = ScreenBeamProfileMeasurement(device=screen_device)
+        measurement = ScreenBeamProfileMeasurement(beam_profile_device=screen_device)
 
         # check plotting
         plot_screen_profile_measurement(measurement)
-
-        plt.show()

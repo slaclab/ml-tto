@@ -539,7 +539,7 @@ class AsymmetricGaussianModel(MethodBase):
         )
 
 
-class CustomImageProjectionFit(ImageProjectionFit):
+class ImageProjectionFit(ImageProjectionFit):
     """
     Image fitting class that gets the beam size and location by independently fitting
     the x/y projections. The default configuration uses a Gaussian fitting of the
@@ -625,7 +625,7 @@ class CustomImageProjectionFit(ImageProjectionFit):
         return result
 
 
-class RecursiveImageProjectionFit(CustomImageProjectionFit):
+class RecursiveImageProjectionFit(ImageProjectionFit):
     n_stds: PositiveFloat = Field(
         4.0, description="Number of standard deviations to use for the bounding box"
     )

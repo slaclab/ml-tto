@@ -50,7 +50,7 @@ class TestSaver:
         result = ScreenBeamProfileMeasurementResult(
             raw_images=images,
             processed_images=processed_images,
-            rms_sizes=rms_sizes or None,
+            rms_sizes_all=rms_sizes or None,
             centroids=centroids or None,
             total_intensities=total_intensities or None,
             metadata={"info": "test"},
@@ -75,7 +75,7 @@ class TestSaver:
 
         mask = ~np.isnan(rms_sizes)
         assert np.allclose(
-            np.asarray(rms_sizes)[mask], loaded_dict["rms_sizes"][mask], rtol=1e-5
+            np.asarray(rms_sizes)[mask], loaded_dict["rms_sizes_all"][mask], rtol=1e-5
         )
         mask = ~np.isnan(centroids)
         assert np.allclose(
