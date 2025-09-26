@@ -1,6 +1,8 @@
 name: Run tests
 
 on:
+  schedule:
+    - cron: '0 5 * * *'
   pull_request:
   push:
   release:
