@@ -4,7 +4,7 @@ import time
 from typing import Callable, Optional, Tuple
 
 import numpy as np
-from pydantic import PositiveFloat, PositiveInt
+from pydantic import PositiveFloat, PositiveInt, Field, field_serializer
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
@@ -69,7 +69,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
     min_beamsize_cutoff: float = 100.0  # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
-    evaluate_callback: Optional[Callable] = None
+    evaluate_callback: Optional[Callable] = Field(None, exclude=True)
     transmission_measurement: Optional[TransmissionMeasurement] = None
     transmission_measurement_constraint: Optional[float] = 0.9
     max_measurement_retries: int = 10
@@ -78,6 +78,18 @@ class MLQuadScanEmittance(QuadScanEmittance):
     # data storage
     X: Optional[Xopt] = None
     scan_values: Optional[list[float]] = []
+
+    @field_serializer("X")
+    def serialize_X(self, X, info):
+        info = X.model_dump() if X is not None else None
+        if info is not None:
+            # remove the generator's model to avoid serialization issues
+            info["generator"].pop("model", None)
+
+            # remove the evaluator's function to avoid serialization issues
+            info["evaluator"].pop("function", None)
+
+        return info
 
     def _evaluate(self, inputs):
         # set quadrupole strength
@@ -323,7 +335,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         return np.max(
             (
                 self.beamsize_cutoff_max * np.sqrt(min_size),
-                self.min_beamsize_cutoff / self.beamsize_measurement.beam_profile_device.resolution,
+                self.min_beamsize_cutoff
+                / self.beamsize_measurement.beam_profile_device.resolution,
             )
         )
 
