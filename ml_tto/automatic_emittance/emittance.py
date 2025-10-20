@@ -218,6 +218,7 @@ class QuadScanEmittance(Measurement):
     wait_time: PositiveFloat = 1.0
 
     rmat_given: bool = Field(init=False, default=False)
+    save_location: Optional[str] = None
 
     name: str = "quad_scan_emittance"
     model_config = ConfigDict(arbitrary_types_allowed=True)
