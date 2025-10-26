@@ -8,6 +8,7 @@ from pydantic import PositiveFloat, PositiveInt, Field, field_serializer
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
+from tenacity import retry, stop_after_attempt, stop_after_delay, wait_fixed, retry_if_exception_type, Retrying, RetryError
 
 from ml_tto.automatic_emittance.emittance import (
     QuadScanEmittance,
@@ -21,6 +22,11 @@ from ml_tto.gpsr.lcls_tools import (
 )
 from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
 
+class NotReadyError(RuntimeError):
+    pass
+
+class NoBeamError(RuntimeError):
+    pass
 
 class MLQuadScanEmittance(QuadScanEmittance):
     """
@@ -63,13 +69,13 @@ class MLQuadScanEmittance(QuadScanEmittance):
     verbose: bool = False
 
     # more detailed settings for the scan
-    min_signal_to_noise_ratio: float = 4.0
     n_interpolate_points: Optional[PositiveInt] = 3
     n_grid_points: PositiveInt = 100
     min_beamsize_cutoff: float = 100.0  # in microns
     beamsize_cutoff_max: float = 3.0
     beta: float = 10000.0
     evaluate_callback: Optional[Callable] = Field(None, exclude=True)
+    ready_callback: Optional[Callable] = Field(None, exclude=True)
     transmission_measurement: Optional[TransmissionMeasurement] = None
     transmission_measurement_constraint: Optional[float] = 0.9
     max_measurement_retries: int = 10
@@ -91,7 +97,63 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         return info
 
+    # retry the ready check for at most 5 minutes - check every 5 seconds
+    @retry(
+        stop=stop_after_delay(60), 
+        wait=wait_fixed(5),
+        retry=retry_if_exception_type(NotReadyError)
+    )
+    def ready_check(self):
+        if self.ready_callback is not None:
+            # check to see if we are ready -- if not raise an error
+            print("calling ready check")
+            if not self.ready_callback():
+                raise NotReadyError()
+
+    def do_measurement(self, inputs):
+        print("trying beamsize measurement")
+        self.measure_beamsize()
+        fit_result = self._info[-1]
+        self.scan_values.append(inputs["k"])
+        
+        # if transmission measurement is set, measure transmission
+        extra_measurements = {}
+        if self.transmission_measurement is not None:
+            extra_measurements.update(self.transmission_measurement.measure())
+
+        if self.evaluate_callback is not None:
+            additional_results = self.evaluate_callback(
+                inputs=inputs, fit_result=fit_result
+            )
+            extra_measurements.update(additional_results)
+
+        # add extra measurements to fit result metadata
+        fit_result.metadata.update(extra_measurements)
+
+        self._info[-1] = fit_result
+
+        # collect results
+        rms_x = fit_result.rms_sizes[:, 0]
+        rms_y = fit_result.rms_sizes[:, 1]
+
+        results = {
+            "x_rms_px_sq": rms_x**2,
+            "y_rms_px_sq": rms_y**2,
+            "min_signal_to_noise_ratio": np.min(
+                fit_result.signal_to_noise_ratios
+            ),
+        }
+        results.update(extra_measurements)
+
+        return results
+        
+    
     def _evaluate(self, inputs):
+        # validate that we are ready to set the quad
+        self.ready_check()
+
+        old_quad_strength = self.magnet.bctrl
+        
         # set quadrupole strength
         if self.verbose:
             print(f"Setting quadrupole strength to {inputs['k']}")
@@ -102,76 +164,33 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # bctrl refresh rate is less than 10 ms
         time.sleep(self.bctrl_refresh_rate)
         while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
-            time.sleep(self.bctrl_refresh_rate)
+            time.sleep(self.bctrl_refresh_rate)            
 
         if self.verbose:
             print(f"Quadrupole strength bact is {self.magnet.bact}")
 
-        # try up to `max_measurement_retries` times to make the beamsize measurements
-        for attempt in range(self.max_measurement_retries):
-            try:
-                self.measure_beamsize()
-                fit_result = self._info[-1]
-                self.scan_values.append(inputs["k"])
+        # if provided, check transmission
+        if self.transmission_measurement is not None:
+            transmission = self.transmission_measurement.measure()["transmission"]
 
-                # if transmission measurement is set, measure transmission
-                extra_measurements = {}
-                if self.transmission_measurement is not None:
-                    extra_measurements.update(self.transmission_measurement.measure())
-
-                if self.evaluate_callback is not None:
-                    additional_results = self.evaluate_callback(
-                        inputs=inputs, fit_result=fit_result
-                    )
-                    extra_measurements.update(additional_results)
-
-                # add extra measurements to fit result metadata
-                fit_result.metadata.update(extra_measurements)
-
-                # replace last element of info with validated result
-                fit_result.rms_sizes = np.where(
-                    fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
-                    np.nan,
-                    fit_result.rms_sizes,
-                )
-                fit_result.centroids = np.where(
-                    fit_result.signal_to_noise_ratios < self.min_signal_to_noise_ratio,
-                    np.nan,
-                    fit_result.centroids,
-                )
-
-                self._info[-1] = fit_result
-
-                # collect results
-                rms_x = fit_result.rms_sizes[:, 0]
-                rms_y = fit_result.rms_sizes[:, 1]
-
-                results = {
-                    "x_rms_px_sq": rms_x**2,
-                    "y_rms_px_sq": rms_y**2,
-                    "min_signal_to_noise_ratio": np.min(
-                        fit_result.signal_to_noise_ratios
-                    ),
-                }
-                results.update(extra_measurements)
-
-                if self.verbose:
-                    print(f"Results: {results}")
-
-                return results
-            except Exception as e:
-                # TODO: change the exception type to something more specific -- beamline error etc.
-                last_exception = e
-
+            # if the transmission is below the constraint, reset the quad value
+            if transmission < self.transmission_measurement_constraint:
                 print(
-                    f"There was an issue making the measurement, retrying, attempt {attempt}"
+                    f"transmission {transmission} is below constraint"\
+                    f"{self.transmission_measurement_constraint}"
                 )
-                print(traceback.format_exc())
-                if attempt < self.max_measurement_retries - 1:
-                    time.sleep(5.0)
+                results = {
+                    "x_rms_px_sq": np.nan,
+                    "y_rms_px_sq": np.nan,
+                    "min_signal_to_noise_ratio": np.nan,
+                    "transmission": transmission
+                }
+                return results
 
-        print("giving up")
-        raise last_exception
+
+        self.ready_check()
+        return self.do_measurement(inputs)       
+        
 
     def create_xopt_object(self, vocs):
         evaluator = Evaluator(function=self._evaluate)
@@ -310,7 +329,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
                 vocs.constraints = {
                     "min_signal_to_noise_ratio": [
                         "GREATER_THAN",
-                        self.min_signal_to_noise_ratio,
+                        self.beamsize_measurement.beam_fit.signal_to_noise_threshold,
                     ],
                     scan_name: [
                         "LESS_THAN",

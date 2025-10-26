@@ -1,3 +1,4 @@
+import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import (
     ExpectedImprovementGenerator,
@@ -33,27 +34,25 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
     vocs = VOCS(
         variables=local_region,
         objectives={"total_size": "MINIMIZE"},
-        constraints={"transmission": ["GREATER_THAN", 0.8]},
+        constraints={"transmission": ["GREATER_THAN", 0.7]},
     )
-    print(vocs.variable_names)
 
     def eval(inputs):
         try:
             env.set_variables(inputs)
-
-            results = env.get_observables(["total_size", "transmission"])
-            for name in inputs:
-                results.pop(name)
-
-            return results
-
         except RuntimeError:
-            return {"total_size": None, "transmission": None}
+            return {"total_size":np.nan, "transmission":env.bad_transmission}
+
+        results = env.get_observables(["total_size", "transmission"])
+        for name in inputs:
+            results.pop(name)
+
+        return results
 
     evaluator = Evaluator(function=eval)
 
-    generator = UpperConfidenceBoundGenerator(
-        vocs=vocs, n_interpolate_points=3, beta=0.1
+    generator = ExpectedImprovementGenerator(
+        vocs=vocs, n_interpolate_points=3,
     )
     generator.numerical_optimizer.max_time = 2.5
 

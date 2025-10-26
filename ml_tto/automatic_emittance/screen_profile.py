@@ -1,4 +1,7 @@
 from typing import Any
+import numpy as np
+
+from tenacity import retry, stop_after_attempt, stop_after_delay, wait_fixed, retry_if_exception_type, Retrying, RetryError
 
 from lcls_tools.common.devices.screen import Screen
 from ml_tto.automatic_emittance.image_projection_fit import ImageProjectionFit
@@ -14,6 +17,8 @@ from typing import Optional
 from lcls_tools.common.measurements.utils import NDArrayAnnotatedType
 import lcls_tools
 
+class NoBeamError(RuntimeError):
+    pass
 
 class ScreenBeamProfileMeasurementResult(lcls_tools.common.BaseModel):
     """
@@ -83,21 +88,39 @@ class ScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
         shot number
         """
         images = []
+        processed_images = []
+        rms_sizes = []
+        centroids = []
+        total_intensities = []
+        signal_to_noise_ratios = []
         while len(images) < n_shots:
-            images.append(self.beam_profile_device.image)
-            # TODO: need to add a wait statement in here for images to update
+            try:
+                for attempt in Retrying(
+                    stop=stop_after_attempt(5),
+                    retry=retry_if_exception_type(NoBeamError)
+                ):
+                    with attempt:
+                        print("getting image")
+                        image = self.beam_profile_device.image
+                        # TODO: need to add a wait statement in here for images to update
+            
+                        processed_image = self.image_processor.auto_process(image) 
+                        fit_result = self.beam_fit.fit_image(image)
+                        if np.all(np.isnan(fit_result.rms_size)):
+                            raise NoBeamError
 
-        processed_images = [
-            self.image_processor.auto_process(image) for image in images
-        ]
-
-        if self.fit_profile:
-            rms_sizes = []
-            centroids = []
-            total_intensities = []
-            signal_to_noise_ratios = []
-            for image in processed_images:
-                fit_result = self.beam_fit.fit_image(image)
+                        images.append(image)
+                        processed_images.append(processed_image)
+                        rms_sizes.append(fit_result.rms_size)
+                        centroids.append(fit_result.centroid)
+                        total_intensities.append(fit_result.total_intensity)
+                        signal_to_noise_ratios.append(fit_result.signal_to_noise_ratio)
+                        
+            except RetryError:
+                # append the last fit result which contains nans
+                print("beam projection intensity on screen does not meet signal to noise threshold for either axis")
+                images.append(image)
+                processed_images.append(processed_image)
                 rms_sizes.append(fit_result.rms_size)
                 centroids.append(fit_result.centroid)
                 total_intensities.append(fit_result.total_intensity)
