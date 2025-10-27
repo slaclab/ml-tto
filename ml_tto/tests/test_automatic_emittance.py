@@ -50,7 +50,9 @@ class MockBeamline:
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
         self.beamsize_measurement.beam_profile_device = MagicMock(spec=Screen)
         self.beamsize_measurement.beam_profile_device.name = "TestScreen"
-        self.beamsize_measurement.beam_profile_device.resolution = self.screen_resolution
+        self.beamsize_measurement.beam_profile_device.resolution = (
+            self.screen_resolution
+        )
         self.beamsize_measurement.image_processor = MagicMock()
         self.beamsize_measurement.image_processor.roi = self.roi
         self.beamsize_measurement.measure = MagicMock(
