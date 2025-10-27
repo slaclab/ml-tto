@@ -104,7 +104,9 @@ class MLTCAVPhasing(BaseModel):
             self.tcav.phase = final_phase
 
         except Exception as e:
-            logger.exception("Error during TCAV optimization, resetting to original phase")
+            logger.exception(
+                "Error during TCAV optimization, resetting to original phase"
+            )
             self.tcav.phase = start_phase
             raise e
 
@@ -113,7 +115,6 @@ class MLTCAVPhasing(BaseModel):
             logger.info("Restored original TCAV amplitude.")
 
             return self.X
-
 
     def create_xopt_object(self):
         logger.debug("Creating Xopt optimizer object.")
@@ -161,7 +162,9 @@ class MLTCAVPhasing(BaseModel):
         else:
             offset = np.nan
             centroid = np.nan
-            logger.warning(f"Low transmission ({transmission:.2f}), skipping centroid measurement.")
+            logger.warning(
+                f"Low transmission ({transmission:.2f}), skipping centroid measurement."
+            )
 
         result = {"offset": offset, "centroid": centroid, "transmission": transmission}
         if self.evaluate_callback is not None:

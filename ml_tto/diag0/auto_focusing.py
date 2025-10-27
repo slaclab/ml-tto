@@ -1,4 +1,5 @@
 import logging
+
 logger = logging.getLogger("auto_focusing")
 
 import numpy as np
@@ -13,7 +14,13 @@ import traceback
 
 
 def run_auto_focusing(
-    env, screen_name, quads, n_steps=20, old_data=None, target_value=100, objective="total_size"
+    env,
+    screen_name,
+    quads,
+    n_steps=20,
+    old_data=None,
+    target_value=100,
+    objective="total_size",
 ):
     """
     Runs the automatic focusing optimization process on DIAG0 to
@@ -32,7 +39,7 @@ def run_auto_focusing(
 
     # set the screen
     env.set_screen(screen_name)
-    
+
     # Implementation of auto-focusing logic goes here
 
     temp_vocs = VOCS(variables=env.get_bounds(quads), observables=[])
@@ -50,7 +57,7 @@ def run_auto_focusing(
         try:
             env.set_variables(inputs)
         except RuntimeError:
-            return {objective:np.nan, "transmission":env.bad_transmission}
+            return {objective: np.nan, "transmission": env.bad_transmission}
 
         results = env.get_observables([objective, "transmission"])
         for name in inputs:
@@ -61,7 +68,8 @@ def run_auto_focusing(
     evaluator = Evaluator(function=eval)
 
     generator = ExpectedImprovementGenerator(
-        vocs=vocs, n_interpolate_points=3,
+        vocs=vocs,
+        n_interpolate_points=3,
     )
     generator.numerical_optimizer.max_time = 2.5
 
@@ -81,15 +89,20 @@ def run_auto_focusing(
             X.add_data(old_data)
         else:
             X.random_evaluate(3, custom_bounds=random_sample_region)
-        
+
         for i in range(n_steps):
             if X.vocs.select_best(X.data)[1] < target_value:
                 logger.info("converged")
                 break
 
             # if any of the evaluations are close to the objective value - use turbo
-            if np.any(X.data[objective] < 50.0) and X.generator.turbo_controller is None:
-                logger.info("found a point close to the optimum, starting turbo controller")
+            if (
+                np.any(X.data[objective] < 50.0)
+                and X.generator.turbo_controller is None
+            ):
+                logger.info(
+                    "found a point close to the optimum, starting turbo controller"
+                )
                 X.generator.turbo_controller = "optimize"
 
             # try running a bo step until we succeed -- max 5 tries
@@ -98,7 +111,9 @@ def run_auto_focusing(
                     X.step()
                     break
                 except OptimizationGradientError:
-                    logger.warning("gradient error, adding random evals and then trying again")
+                    logger.warning(
+                        "gradient error, adding random evals and then trying again"
+                    )
                     X.random_evaluate(1)
     except Exception:
         logger.error(traceback.format_exc())

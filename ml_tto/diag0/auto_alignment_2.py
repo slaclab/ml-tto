@@ -9,7 +9,7 @@ import torch
 from gpytorch.kernels import ScaleKernel, PolynomialKernel
 import traceback
 
-# Setup Logging 
+# Setup Logging
 logger = logging.getLogger("auto_alignment")
 
 
@@ -197,7 +197,9 @@ def run_automatic_alignment(
                     X.step()
                     break
                 except OptimizationGradientError:
-                    logger.warning("gradient error, adding random evals and then trying again")
+                    logger.warning(
+                        "gradient error, adding random evals and then trying again"
+                    )
                     X.random_evaluate(1)
 
     except Exception:

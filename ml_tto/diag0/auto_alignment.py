@@ -11,7 +11,7 @@ import traceback
 
 from ml_tto.errors import TransmissionError
 
-# Setup Logging 
+# Setup Logging
 logger = logging.getLogger("auto_alignment")
 
 
@@ -83,18 +83,18 @@ def run_automatic_alignment(
 
     """
     env.set_screen(to_screen_name)
-    
+
     logger.info(f"Starting automatic alignment for screen: {to_screen_name}")
     # if just transporting beam to OTRDG02, use all BPMs except 470 and 520
     pvs = alignment_pvs[to_screen_name]["corrector_pvs"]
     bpm_observables = alignment_pvs[to_screen_name]["bpms"]
 
     # set biasing for certain bpms
-    bpm_weights = {name:1.0 for name in bpm_observables}
+    bpm_weights = {name: 1.0 for name in bpm_observables}
     for name in bpm_weights:
         if "330" in name or "390" in name:
             bpm_weights[name] = 2.0
-    formatted_string = "\n".join([f"{name}:{val}" for name,val in bpm_weights.items()])
+    formatted_string = "\n".join([f"{name}:{val}" for name, val in bpm_weights.items()])
     logger.debug(f"weighting bpm signal as follows:\n{formatted_string}")
 
     temp_vocs = VOCS(variables=env.get_bounds(pvs), observables=[])
@@ -142,7 +142,8 @@ def run_automatic_alignment(
             return -torch.norm(
                 torch.stack(
                     [
-                        samples[..., self.vocs.observable_names.index(name)]*bpm_weights[name]
+                        samples[..., self.vocs.observable_names.index(name)]
+                        * bpm_weights[name]
                         for name in bpm_observables
                     ]
                 ),
@@ -202,12 +203,20 @@ def run_automatic_alignment(
         for i in range(n_steps):
             # if any of the evaluations are close to the objective value - use max travel distances
             # to restrict exploration
-            if np.any(X.data["norm"] < target_value * 3.0) and X.generator.max_travel_distances is None:
-                logger.info("found a point close to the optimum, evaluating that point and restricting max travel distances")
-                X.evaluate_data(X.data[X.vocs.variable_names].iloc[X.data.idxmin()["norm"]].to_dict())
-                X.generator.max_travel_distances = [0.25]*X.vocs.n_variables
+            if (
+                np.any(X.data["norm"] < target_value * 3.0)
+                and X.generator.max_travel_distances is None
+            ):
+                logger.info(
+                    "found a point close to the optimum, evaluating that point and restricting max travel distances"
+                )
+                X.evaluate_data(
+                    X.data[X.vocs.variable_names]
+                    .iloc[X.data.idxmin()["norm"]]
+                    .to_dict()
+                )
+                X.generator.max_travel_distances = [0.25] * X.vocs.n_variables
 
-            
             logger.info(f"At step {i}")
             if X.data.min()["norm"] < target_value:
                 logger.info("Converged")
@@ -219,7 +228,9 @@ def run_automatic_alignment(
                     X.step()
                     break
                 except OptimizationGradientError:
-                    logger.warning("gradient error, adding random evals and then trying again")
+                    logger.warning(
+                        "gradient error, adding random evals and then trying again"
+                    )
                     random_sample_region = get_local_region(
                         env.get_variables(vocs.variables.keys()), X.vocs, fraction=0.1
                     )

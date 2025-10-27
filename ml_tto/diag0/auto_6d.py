@@ -1,4 +1,4 @@
-import logging 
+import logging
 
 logger = logging.getLogger("auto_6d")
 
@@ -7,6 +7,7 @@ from lcls_tools.common.data.saver import H5Saver
 import time
 import pandas as pd
 import yaml
+
 
 def run_automatic_6d_measurement(env, save_filename):
     """

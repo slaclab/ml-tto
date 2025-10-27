@@ -2,14 +2,22 @@ import warnings
 import traceback
 import time
 from typing import Callable, Optional, Tuple
-import logging 
+import logging
 
 import numpy as np
 from pydantic import PositiveFloat, PositiveInt, Field, field_serializer
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import UpperConfidenceBoundGenerator
 from xopt.numerical_optimizer import GridOptimizer
-from tenacity import retry, stop_after_attempt, stop_after_delay, wait_fixed, retry_if_exception_type, Retrying, RetryError
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    stop_after_delay,
+    wait_fixed,
+    retry_if_exception_type,
+    Retrying,
+    RetryError,
+)
 
 from ml_tto.automatic_emittance.emittance import (
     QuadScanEmittance,
@@ -25,6 +33,7 @@ from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
 from ml_tto.errors import NotReadyError, NoBeamError, BackgroundMismatchError
 
 logger = logging.getLogger("auto_quad_scan")
+
 
 class MLQuadScanEmittance(QuadScanEmittance):
     """
@@ -97,23 +106,23 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     # retry the ready check for at most 5 minutes - check every 5 seconds
     @retry(
-        stop=stop_after_delay(300), 
+        stop=stop_after_delay(300),
         wait=wait_fixed(5),
-        retry=retry_if_exception_type(NotReadyError)
+        retry=retry_if_exception_type(NotReadyError),
     )
     def ready_check(self):
         if self.ready_callback is not None:
             # check to see if we are ready -- if not raise an error
             logger.debug("calling ready check")
             if not self.ready_callback():
-                raise NotReadyError() 
-        
+                raise NotReadyError()
+
     def _evaluate(self, inputs):
         # validate that we are ready to set the quad
         self.ready_check()
 
         old_quad_strength = self.magnet.bctrl
-        
+
         # set quadrupole strength
         logger.debug(f"Setting quadrupole strength to {inputs['k']}")
         self.magnet.bctrl = inputs["k"]
@@ -123,7 +132,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # bctrl refresh rate is less than 10 ms
         time.sleep(self.bctrl_refresh_rate)
         while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
-            time.sleep(self.bctrl_refresh_rate)            
+            time.sleep(self.bctrl_refresh_rate)
 
         logger.debug(f"Quadrupole strength bact is {self.magnet.bact}")
 
@@ -134,14 +143,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
             # if the transmission is below the constraint, reset the quad value
             if transmission < self.transmission_measurement_constraint:
                 logger.warning(
-                    f"transmission {transmission} is below constraint: "\
+                    f"transmission {transmission} is below constraint: "
                     f"{self.transmission_measurement_constraint}"
                 )
                 results = {
                     "x_rms_px_sq": np.array([np.nan]),
                     "y_rms_px_sq": np.array([np.nan]),
                     "min_signal_to_noise_ratio": np.nan,
-                    "transmission": transmission
+                    "transmission": transmission,
                 }
                 return results
 
@@ -155,7 +164,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
             raise BackgroundMismatchError()
         fit_result = self._info[-1]
         self.scan_values.append(inputs["k"])
-        
+
         # if transmission measurement is set, measure transmission
         extra_measurements = {}
         if self.transmission_measurement is not None:
@@ -179,14 +188,11 @@ class MLQuadScanEmittance(QuadScanEmittance):
         results = {
             "x_rms_px_sq": rms_x**2,
             "y_rms_px_sq": rms_y**2,
-            "min_signal_to_noise_ratio": np.min(
-                fit_result.signal_to_noise_ratios
-            ),
+            "min_signal_to_noise_ratio": np.min(fit_result.signal_to_noise_ratios),
         }
         results.update(extra_measurements)
 
         return results
-        
 
     def create_xopt_object(self, vocs):
         evaluator = Evaluator(function=self._evaluate)

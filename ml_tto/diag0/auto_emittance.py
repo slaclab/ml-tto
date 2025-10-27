@@ -22,7 +22,7 @@ def run_automatic_emittance(env, screen_name):
     energy = env.get_variables(["BEND:DIAG0:155:BCTRL"])["BEND:DIAG0:155:BCTRL"] * 1e9
 
     env.set_screen(screen_name)
-    
+
     if screen_name == "OTRDG02":
         emittance_file = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG02.yaml"
         emittance_config = yaml.safe_load(open(emittance_file))
@@ -36,7 +36,7 @@ def run_automatic_emittance(env, screen_name):
         emittance_file = "/home/physics/badger/resources/dev/plugins/environments/diag0_dev/emittance_measurement_configs/OTRDG04.yaml"
         emittance_config = yaml.safe_load(open(emittance_file))
         env.emittance_config = emittance_config
-        
+
         env.transmission_measurement_constraint = 0.7
         env.min_beamsize_cutoff = 1000
         logger.info("Configured environment for OTRDG04")
