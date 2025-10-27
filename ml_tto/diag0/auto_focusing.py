@@ -1,3 +1,6 @@
+import logging
+logger = logging.getLogger("auto_focusing")
+
 import numpy as np
 from xopt import Xopt, Evaluator, VOCS
 from xopt.generators.bayesian import (
@@ -9,7 +12,9 @@ from botorch.exceptions.errors import OptimizationGradientError
 import traceback
 
 
-def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
+def run_auto_focusing(
+    env, screen_name, quads, n_steps=20, old_data=None, target_value=100, objective="total_size"
+):
     """
     Runs the automatic focusing optimization process on DIAG0 to
     `screen_name`.
@@ -24,6 +29,10 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
     Returns:
         dict: The results of the optimization.
     """
+
+    # set the screen
+    env.set_screen(screen_name)
+    
     # Implementation of auto-focusing logic goes here
 
     temp_vocs = VOCS(variables=env.get_bounds(quads), observables=[])
@@ -33,7 +42,7 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
 
     vocs = VOCS(
         variables=local_region,
-        objectives={"total_size": "MINIMIZE"},
+        objectives={objective: "MINIMIZE"},
         constraints={"transmission": ["GREATER_THAN", 0.7]},
     )
 
@@ -41,9 +50,9 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
         try:
             env.set_variables(inputs)
         except RuntimeError:
-            return {"total_size":np.nan, "transmission":env.bad_transmission}
+            return {objective:np.nan, "transmission":env.bad_transmission}
 
-        results = env.get_observables(["total_size", "transmission"])
+        results = env.get_observables([objective, "transmission"])
         for name in inputs:
             results.pop(name)
 
@@ -61,7 +70,7 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
     try:
         X.evaluate_data(env.get_variables(vocs.variables.keys()))
         if X.vocs.select_best(X.data)[1] < target_value:
-            print("converged")
+            logger.info("converged")
             return X
 
         random_sample_region = get_local_region(
@@ -72,12 +81,16 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
             X.add_data(old_data)
         else:
             X.random_evaluate(3, custom_bounds=random_sample_region)
-
+        
         for i in range(n_steps):
-            print(i)
             if X.vocs.select_best(X.data)[1] < target_value:
-                print("converged")
+                logger.info("converged")
                 break
+
+            # if any of the evaluations are close to the objective value - use turbo
+            if np.any(X.data[objective] < 50.0) and X.generator.turbo_controller is None:
+                logger.info("found a point close to the optimum, starting turbo controller")
+                X.generator.turbo_controller = "optimize"
 
             # try running a bo step until we succeed -- max 5 tries
             for _ in range(5):
@@ -85,12 +98,14 @@ def run_auto_focusing(env, quads, n_steps=20, old_data=None, target_value=100):
                     X.step()
                     break
                 except OptimizationGradientError:
-                    print("gradient error, adding random evals and then trying again")
+                    logger.warning("gradient error, adding random evals and then trying again")
                     X.random_evaluate(1)
     except Exception:
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
+        raise
     finally:
-        print("evaluating the best point")
         idx = X.vocs.select_best(X.data)[0]
-        X.evaluate_data(X.data.iloc[idx][X.vocs.variable_names])
+        result = X.evaluate_data(X.data.iloc[idx][X.vocs.variable_names])
+        logger.info(f"evaluated the best point: {objective}={result[objective][0]}")
+
         return X

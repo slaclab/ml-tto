@@ -1,10 +1,12 @@
 from typing import Any
 import numpy as np
+import logging
 
 from tenacity import retry, stop_after_attempt, stop_after_delay, wait_fixed, retry_if_exception_type, Retrying, RetryError
 
 from lcls_tools.common.devices.screen import Screen
 from ml_tto.automatic_emittance.image_projection_fit import ImageProjectionFit
+from ml_tto.errors import NoBeamError
 from lcls_tools.common.image.fit import ImageFit
 from lcls_tools.common.image.processing import ImageProcessor
 from lcls_tools.common.measurements.screen_profile import ScreenBeamProfileMeasurement
@@ -17,8 +19,7 @@ from typing import Optional
 from lcls_tools.common.measurements.utils import NDArrayAnnotatedType
 import lcls_tools
 
-class NoBeamError(RuntimeError):
-    pass
+logger = logging.getLogger("screen_profile_measurement")
 
 class ScreenBeamProfileMeasurementResult(lcls_tools.common.BaseModel):
     """
@@ -96,11 +97,11 @@ class ScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
         while len(images) < n_shots:
             try:
                 for attempt in Retrying(
-                    stop=stop_after_attempt(5),
+                    stop=stop_after_attempt(3),
                     retry=retry_if_exception_type(NoBeamError)
                 ):
                     with attempt:
-                        print("getting image")
+                        logger.debug("getting image")
                         image = self.beam_profile_device.image
                         # TODO: need to add a wait statement in here for images to update
             
@@ -118,8 +119,8 @@ class ScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
                         
             except RetryError:
                 # append the last fit result which contains nans
-                print("beam projection intensity on screen does not meet signal to noise threshold for either axis")
-                images.append(image)
+                logger.warning("beam projection intensity on screen does not meet signal to noise threshold for either axis")
+                images.append(image)                
                 processed_images.append(processed_image)
                 rms_sizes.append(fit_result.rms_size)
                 centroids.append(fit_result.centroid)

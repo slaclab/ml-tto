@@ -46,6 +46,7 @@ class MLTCAVPhasing(BaseModel):
     nominal_centroid: Optional[float] = None
     max_scan_range: list[float] = [-180, 180]
     evaluate_callback: Optional[Callable] = None
+    min_transmission: float = 0.8
 
     verbose: bool = False
 
@@ -111,6 +112,8 @@ class MLTCAVPhasing(BaseModel):
             self.tcav.amplitude = start_amp
             logger.info("Restored original TCAV amplitude.")
 
+            return self.X
+
 
     def create_xopt_object(self):
         logger.debug("Creating Xopt optimizer object.")
@@ -118,23 +121,12 @@ class MLTCAVPhasing(BaseModel):
         vocs = VOCS(
             variables={"phase": self.max_scan_range},
             objectives={"offset": "MINIMIZE"},
-            constraints={"transmission": ["GREATER_THAN", 0.9]},
+            constraints={"transmission": ["GREATER_THAN", self.min_transmission]},
         )
-
-        print(vocs.variables)
 
         evaluator = Evaluator(function=self._evaluate)
 
-        class OffsetPrior(torch.nn.Module):
-            def forward(self, X):
-                return 100 * torch.ones_like(X).squeeze(dim=-1)
-
-        gp_constructor = StandardModelConstructor(
-            mean_modules={"offset": OffsetPrior()}, use_low_noise_prior=True
-        )
-        generator = UpperConfidenceBoundGenerator(
-            vocs=vocs, gp_constructor=gp_constructor
-        )
+        generator = UpperConfidenceBoundGenerator(vocs=vocs)
         logger.debug("Xopt object created.")
         return Xopt(vocs=vocs, evaluator=evaluator, generator=generator)
 
@@ -182,10 +174,7 @@ class MLTCAVPhasing(BaseModel):
 def run_automatic_tcav_phasing(env):
     tcav = env.tcav
     logger.info(f"Starting automatic TCAV phasing. Current TCAV phase: {tcav.phase}")
-
-    transmission_measurement = TransmissionMeasurement(
-        upstream_bpm=env.upstream_bpm, downstream_bpm=env.downstream_bpm
-    )
+    env.set_screen("OTRDG02")
 
     def eval_callback(inputs):
         return env._evaluate_callback(inputs, None)
@@ -193,14 +182,12 @@ def run_automatic_tcav_phasing(env):
     phaser = MLTCAVPhasing(
         bpm=env.downstream_bpm,
         tcav=tcav,
-        transmission_measurement=transmission_measurement,
+        transmission_measurement=env.transmission_measurement,
         wait_time=1.0,
         evaluate_callback=eval_callback,
         verbose=False,
     )
 
-    phaser.run()
+    X = phaser.run()
 
-    logger.info(f"Set new TCAV phase to {phaser.optimized_phase}")
-
-    return phaser.X
+    return X

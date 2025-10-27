@@ -1,12 +1,12 @@
 import logging 
 
-logger = logging.getLogger("atuo_6d")
+logger = logging.getLogger("auto_6d")
 
 from ml_tto.diag0.auto_emittance import run_automatic_emittance
-from ml_tto.saver import H5Saver
+from lcls_tools.common.data.saver import H5Saver
 import time
 import pandas as pd
-
+import yaml
 
 def run_automatic_6d_measurement(env, save_filename):
     """
@@ -20,9 +20,6 @@ def run_automatic_6d_measurement(env, save_filename):
 
     """
     saver = H5Saver()
-
-    # insert OTRDG02
-    env.otrdg02_inserted = True
 
     # turn off TCAV
     env.tcav.amplitude = 0.0
@@ -55,8 +52,7 @@ def run_automatic_6d_measurement(env, save_filename):
     saver.dump(data, save_filename)
 
     # remove OTRDG02 and insert OTRDG04
-    env.otrdg02_inserted = False
-    env.otrdg04_inserted = True
+    env.set_screen("OTRDG04")
 
     # turn off TCAV
     env.tcav.amplitude = 0.0
