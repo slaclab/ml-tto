@@ -16,6 +16,7 @@ from lcls_tools.common.data.saver import H5Saver
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
+from ml_tto.automatic_emittance.image_projection_fit import ImageProjectionFit
 from ml_tto.automatic_emittance.image_projection_fit import RecursiveImageProjectionFit
 from ml_tto.automatic_emittance.screen_profile import (
     ScreenBeamProfileMeasurement,
@@ -55,6 +56,7 @@ class MockBeamline:
         )
         self.beamsize_measurement.image_processor = MagicMock()
         self.beamsize_measurement.image_processor.roi = self.roi
+        self.beamsize_measurement.beam_fit = ImageProjectionFit()
         self.beamsize_measurement.measure = MagicMock(
             side_effect=self.get_beamsize_measurement
         )
