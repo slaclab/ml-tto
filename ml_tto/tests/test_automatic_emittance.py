@@ -348,7 +348,7 @@ class TestAutomaticEmittance:
         upstream = create_autospec(BPM, instance=True)
         downstream = create_autospec(BPM, instance=True)
         upstream.tmit = 10.0
-        downstream.tmit = 5.0
+        downstream.tmit = 9.5
         transmission_meas = TransmissionMeasurement(
             upstream_bpm=upstream, downstream_bpm=downstream
         )
