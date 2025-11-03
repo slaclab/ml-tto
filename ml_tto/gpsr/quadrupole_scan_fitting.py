@@ -1,7 +1,12 @@
+import io
+import shutil
+import tempfile
 import torch
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
+from tqdm import tqdm
 
 from gpsr.modeling import GPSR
 from gpsr.train import LitGPSR
@@ -133,6 +138,8 @@ def gpsr_fit_quad_scan(
     visualize=False,
     save_location=None,
     save_name=None,
+    frame_delay=0.25,
+    loop_delay=5.0,
 ):
     """
     Basic method for using GPSR to fit quadrupole scan data.
@@ -190,6 +197,10 @@ def gpsr_fit_quad_scan(
         Location to save diagnostic plots.
     save_name: str, optional
         Name to use for saving the diagnostic plots.
+    frame_delay: float, optional
+        Delay between frames of the reconstruction gif in seconds.
+    loop_delay: float, optional
+        Delay between loops of the reconstruction gif in seconds.
 
     Returns
     -------
@@ -263,12 +274,27 @@ def gpsr_fit_quad_scan(
 
     litgpsr = LitGPSR(gpsr_model, lr=learning_rate)
 
+    # create callbacks
+    metric_cb = MetricTracker()
+    if visualize or save_location is not None:
+        # temporarily save checkpoints for reconstruction
+        checkpoint_dir = tempfile.mkdtemp(dir=os.getcwd())
+        checkpoint_cb = L.pytorch.callbacks.ModelCheckpoint(
+            save_weights_only=True,
+            every_n_epochs=1,
+            save_top_k=-1,
+            dirpath=checkpoint_dir,
+            filename="model-{epoch:03d}",
+        )
+        callbacks = [metric_cb, checkpoint_cb]
+    else:
+        callbacks = [metric_cb]
+
     # create a pytorch lightning trainer
-    cb = MetricTracker()
     trainer = L.Trainer(
         limit_train_batches=100,
         max_epochs=n_epochs,
-        callbacks=[cb],
+        callbacks=callbacks,
         accelerator="gpu",
         devices=1,
     )
@@ -296,10 +322,9 @@ def gpsr_fit_quad_scan(
 
     # get the reconstructed beam emittances and twiss parameters
     results = get_beam_stats(fractional_beam, gpsr_model, design_twiss)
-
     if visualize or save_location is not None:
         fig1, fig2, fig3 = visualize_quad_scan_result(
-            quad_strengths, train_dset, pred_dset, cb, results, fractional_beam
+            quad_strengths, train_dset, pred_dset, metric_cb, results, fractional_beam
         )
 
         save_name = save_name or "gpsr_training"
@@ -307,6 +332,41 @@ def gpsr_fit_quad_scan(
             fig1.savefig(os.path.join(save_location, save_name + "_pred") + ".png")
             fig2.savefig(os.path.join(save_location, save_name + "_loss") + ".png")
             fig3.savefig(os.path.join(save_location, save_name + "_dist") + ".png")
+
+        # generate reconstruction animation
+        print('generating distribution images')
+        beam_frames = []
+        for epoch in tqdm(range(n_epochs)):
+            # load weights from checkpoint
+            checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
+            checkpoint = torch.load(checkpoint_path)
+            litgpsr.load_state_dict(checkpoint["state_dict"])
+            litgpsr.to("cuda")
+
+            # perform 4d reconstruction
+            reconstructed_beam = litgpsr.gpsr_model.beam_generator()
+            reconstructed_beam.plot_distribution(["x", "px", "y", "py"], bin_ranges=[[-1.1e-3, 1.1e-3], [-0.2e-3, 0.2e-3], [-1e-3, 1e-3], [-0.2e-3, 0.2e-3]])
+            plt.suptitle(f"4D reconstruction (epoch {epoch + 1})")
+
+            # save files to dump location
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png")
+            plt.close()
+            buf.seek(0)
+            img = Image.open(buf)
+            beam_frames.append(img)
+
+        # save frames as gif
+        durations = [frame_delay * 1000] * (len(beam_frames) - 1) + [loop_delay * 1000]
+        animation_path = os.path.join(save_location, save_name + "_4d_recon") + ".gif"
+        beam_frames[0].save(animation_path,
+                   save_all=True,
+                   append_images=beam_frames[1:],
+                   duration=durations,   # duration per frame in ms
+                   loop=0)         # 0 means loop forever
+
+        # delete temporary checkpoints
+        shutil.rmtree(checkpoint_dir)
 
     results.update(
         {
