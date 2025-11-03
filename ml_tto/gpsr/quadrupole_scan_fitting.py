@@ -1,3 +1,4 @@
+import atexit
 import io
 import shutil
 import tempfile
@@ -279,6 +280,7 @@ def gpsr_fit_quad_scan(
     if visualize or save_location is not None:
         # temporarily save checkpoints for reconstruction
         checkpoint_dir = tempfile.mkdtemp(dir=os.getcwd())
+        atexit.register(shutil.rmtree, checkpoint_dir) # clean up on exit, even if exception is raised
         checkpoint_cb = L.pytorch.callbacks.ModelCheckpoint(
             save_weights_only=True,
             every_n_epochs=1,
@@ -364,9 +366,6 @@ def gpsr_fit_quad_scan(
                    append_images=beam_frames[1:],
                    duration=durations,   # duration per frame in ms
                    loop=0)         # 0 means loop forever
-
-        # delete temporary checkpoints
-        shutil.rmtree(checkpoint_dir)
 
     results.update(
         {
