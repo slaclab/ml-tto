@@ -352,6 +352,7 @@ def gpsr_fit_quad_scan(
         # generate reconstruction animation
         print('generating distribution images')
         beam_frames = []
+        pred_frames = []
         for epoch in tqdm(range(n_epochs)):
             # load weights from checkpoint
             checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
@@ -364,7 +365,7 @@ def gpsr_fit_quad_scan(
             reconstructed_beam.plot_distribution(["x", "px", "y", "py"], bin_ranges=[[-1.1e-3, 1.1e-3], [-0.2e-3, 0.2e-3], [-1e-3, 1e-3], [-0.2e-3, 0.2e-3]])
             plt.suptitle(f"4D reconstruction (epoch {epoch + 1})")
 
-            # save files to dump location
+            # save frame
             buf = io.BytesIO()
             plt.savefig(buf, format="png")
             plt.close()
@@ -372,12 +373,96 @@ def gpsr_fit_quad_scan(
             img = Image.open(buf)
             beam_frames.append(img)
 
+            # predict the measurements to compare with training data
+            #pred = gpsr_model(train_dset.parameters)[0].detach()
+            pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
+            pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
+
+            # compare the predicted measurements with the training data
+            fig, ax = plt.subplots(
+                3,
+                len(quad_strengths),
+                sharex="all",
+                sharey="all",
+                gridspec_kw={"hspace": 0.05, "wspace": 0.05},
+            )
+
+            # plot training / predicted data
+            i = 0
+            for ele in [train_dset, pred_dset]:
+                ele.plot_data(ax=ax[i], add_labels=False)
+                i += 1
+
+            # plot overlay comparison
+            train_dset.plot_data(
+                overlay_data=pred_dset,
+                overlay_kwargs={"levels": [0.01, 0.25, 0.75, 0.9], "cmap": "Greys"},
+                filter_size=0,
+                ax=ax[2],
+                add_labels=False,
+            )
+
+            # add labels
+            ax[0, 0].text(
+                -0.1,
+                1.1,
+                "$k_1$ (1/m$^2$)",
+                va="bottom",
+                ha="right",
+                transform=ax[0, 0].transAxes,
+            )
+
+            label = ["Measured", "Predicted", "Overlay"]
+            for kk in range(3):
+                ax[kk, 0].text(
+                    -1.25,
+                    0.5,
+                    label[kk],
+                    va="center",
+                    ha="right",
+                    transform=ax[kk, 0].transAxes,
+                    rotation="vertical",
+                    size="large",
+                    weight="bold",
+                )
+
+            # set titles for each subplot
+            for j in range(len(quad_strengths)):
+                ax[0, j].set_title(f"{quad_strengths[j]:.2f}")
+
+            # set axes labels
+            for j in range(len(quad_strengths)):
+                ax[-1, j].set_xlabel("x [mm]")
+
+            for k in range(3):
+                ax[k, 0].set_ylabel("y [mm]")
+
+            fig.set_size_inches(len(quad_strengths), 5)
+
+            # save frame
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png")
+            plt.close()
+            buf.seek(0)
+            img = Image.open(buf)
+            pred_frames.append(img)
+
         # save frames as gif
+        print('saving animations to gif')
         durations = [frame_delay * 1000] * (len(beam_frames) - 1) + [loop_delay * 1000]
         animation_path = os.path.join(save_location, save_name + "_4d_recon") + ".gif"
         beam_frames[0].save(animation_path,
                    save_all=True,
                    append_images=beam_frames[1:],
+                   duration=durations,   # duration per frame in ms
+                   loop=0)         # 0 means loop forever
+
+        # save frames as gif
+        durations = [frame_delay * 1000] * (len(pred_frames) - 1) + [loop_delay * 1000]
+        animation_path = os.path.join(save_location, save_name + "_pred") + ".gif"
+        pred_frames[0].save(animation_path,
+                   save_all=True,
+                   append_images=pred_frames[1:],
                    duration=durations,   # duration per frame in ms
                    loop=0)         # 0 means loop forever
 
