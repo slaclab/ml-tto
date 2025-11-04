@@ -139,6 +139,7 @@ def gpsr_fit_quad_scan(
     visualize=False,
     save_location=None,
     save_name=None,
+    animate=False,
     frame_delay=0.25,
     loop_delay=5.0,
 ):
@@ -198,10 +199,12 @@ def gpsr_fit_quad_scan(
         Location to save diagnostic plots.
     save_name: str, optional
         Name to use for saving the diagnostic plots.
+    animate: bool, optional
+        Whether to save diagnostic animations.
     frame_delay: float, optional
-        Delay between frames of the reconstruction gif in seconds.
+        Delay between frames of each animation in seconds.
     loop_delay: float, optional
-        Delay between loops of the reconstruction gif in seconds.
+        Delay between loops of each animation in seconds.
 
     Returns
     -------
@@ -277,7 +280,7 @@ def gpsr_fit_quad_scan(
 
     # create callbacks
     metric_cb = MetricTracker()
-    if visualize or save_location is not None:
+    if animate:
         # temporarily save checkpoints for reconstruction
         checkpoint_dir = tempfile.mkdtemp(dir=os.getcwd())
         atexit.register(shutil.rmtree, checkpoint_dir) # clean up on exit, even if exception is raised
@@ -324,7 +327,7 @@ def gpsr_fit_quad_scan(
 
     # get the reconstructed beam emittances and twiss parameters
     results = get_beam_stats(fractional_beam, gpsr_model, design_twiss)
-    if visualize or save_location is not None:
+    if visualize:
         fig1, fig2, fig3 = visualize_quad_scan_result(
             quad_strengths, train_dset, pred_dset, metric_cb, results, fractional_beam
         )
@@ -335,6 +338,17 @@ def gpsr_fit_quad_scan(
             fig2.savefig(os.path.join(save_location, save_name + "_loss") + ".png")
             fig3.savefig(os.path.join(save_location, save_name + "_dist") + ".png")
 
+    results.update(
+        {
+            "reconstructed_distribution": reconstructed_beam,
+            "fractional_distribution": fractional_beam,
+            "gpsr_model": gpsr_model,
+            "prediction_dataset": pred_dset,
+            "training_dataset": train_dset,
+        }
+    )
+
+    if animate:
         # generate reconstruction animation
         print('generating distribution images')
         beam_frames = []
@@ -366,15 +380,5 @@ def gpsr_fit_quad_scan(
                    append_images=beam_frames[1:],
                    duration=durations,   # duration per frame in ms
                    loop=0)         # 0 means loop forever
-
-    results.update(
-        {
-            "reconstructed_distribution": reconstructed_beam,
-            "fractional_distribution": fractional_beam,
-            "gpsr_model": gpsr_model,
-            "prediction_dataset": pred_dset,
-            "training_dataset": train_dset,
-        }
-    )
 
     return results
