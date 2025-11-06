@@ -2,13 +2,12 @@ from unittest.mock import create_autospec, patch, Mock, MagicMock
 import matplotlib.pyplot as plt
 
 import numpy as np
+import pytest
 import torch
 from cheetah import Segment, Quadrupole, Drift, ParameterBeam
 
 from lcls_tools.common.devices.magnet import Magnet, MagnetMetadata
 from lcls_tools.common.devices.screen import Screen
-from lcls_tools.common.frontend.plotting.emittance import plot_quad_scan_result
-from lcls_tools.common.image.roi import CircularROI
 from lcls_tools.common.image.processing import ImageProcessor
 from lcls_tools.common.devices.bpm import BPM
 from lcls_tools.common.data.saver import H5Saver
@@ -16,12 +15,11 @@ from lcls_tools.common.data.saver import H5Saver
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
-from ml_tto.automatic_emittance.image_projection_fit import ImageProjectionFit
-from ml_tto.automatic_emittance.image_projection_fit import RecursiveImageProjectionFit
-from ml_tto.automatic_emittance.screen_profile import (
+from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
 )
+from lcls_tools.common.image.fit import ImageProjectionFit
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 
 
@@ -46,7 +44,6 @@ class MockBeamline:
         )
         self.magnet.name = "Q0"
 
-        self.roi = CircularROI(center=[1, 1], radius=1000)
         self.screen_resolution = 1.0  # resolution of the screen in um / px
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
         self.beamsize_measurement.beam_profile_device = MagicMock(spec=Screen)
@@ -55,7 +52,6 @@ class MockBeamline:
             self.screen_resolution
         )
         self.beamsize_measurement.image_processor = MagicMock()
-        self.beamsize_measurement.image_processor.roi = self.roi
         self.beamsize_measurement.beam_fit = ImageProjectionFit()
         self.beamsize_measurement.measure = MagicMock(
             side_effect=self.get_beamsize_measurement
@@ -88,8 +84,9 @@ class MockBeamline:
         )
 
         result = MagicMock(ScreenBeamProfileMeasurementResult)
-        result.rms_sizes = np.stack([sigma_x, sigma_y]).T
-        result.centroids = self.roi.radius[0] * np.ones((1, 2))
+        result.rms_sizes_all = np.stack([sigma_x, sigma_y]).T
+        result.rms_sizes = np.stack([sigma_x, sigma_y]).T.flatten()
+        result.centroids = 1000.0 * np.ones((1, 2))
         result.signal_to_noise_ratios = np.ones(2) * 10.0
 
         # simulate the beam losing intensity on the edges
@@ -99,13 +96,13 @@ class MockBeamline:
         result.total_intensities = np.ones(1) * intensity
         result.metadata = MagicMock()
         result.metadata.image_processor = MagicMock()
-        result.metadata.image_processor.roi = self.roi
 
         return result
 
 
 class TestAutomaticEmittance:
-    def test_automatic_emit_scan_with_mocked_beamsize_measurement(self):
+    @pytest.mark.parametrize("n_shots, use_design_twiss", [(1, False), (5, True)])
+    def test_automatic_emit_scan_with_mocked_beamsize_measurement(self, n_shots, use_design_twiss):
         """
         Test to verify correct emittance calculation based on data generated from a
         basic cheetah simulation of a quad and drift element
@@ -117,62 +114,64 @@ class TestAutomaticEmittance:
             "beta_y": 0.5323,
             "alpha_y": -1.0615,
         }
+        if use_design_twiss:
+            design_twiss_ele = design_twiss
+        else:
+            design_twiss_ele = None
 
-        # run test with and without design_twiss
-        for design_twiss_ele in [None, design_twiss]:
-            for n_shots in [1, 3]:
-                initial_beam = ParameterBeam.from_twiss(
-                    beta_x=torch.tensor(5.0),
-                    alpha_x=torch.tensor(5.0),
-                    emittance_x=torch.tensor(1e-8),
-                    beta_y=torch.tensor(3.0),
-                    alpha_y=torch.tensor(3.0),
-                    emittance_y=torch.tensor(1e-7),
-                )
 
-                mock_beamline = MockBeamline(initial_beam)
-                initial_bctrl = np.random.randn()
-                mock_beamline.magnet.bctrl = initial_bctrl
+        initial_beam = ParameterBeam.from_twiss(
+            beta_x=torch.tensor(5.0),
+            alpha_x=torch.tensor(5.0),
+            emittance_x=torch.tensor(1e-8),
+            beta_y=torch.tensor(3.0),
+            alpha_y=torch.tensor(3.0),
+            emittance_y=torch.tensor(1e-7),
+        )
 
-                # Instantiate the QuadScanEmittance object
-                quad_scan = MLQuadScanEmittance(
-                    energy=1e9 * 299.792458 / 1e3,
-                    magnet=mock_beamline.magnet,
-                    beamsize_measurement=mock_beamline.beamsize_measurement,
-                    n_measurement_shots=n_shots,
-                    wait_time=1e-3,
-                    rmat=rmat,
-                    design_twiss=design_twiss_ele,
-                    n_initial_points=3,
-                    n_iterations=3,
-                    max_scan_range=[-10, 10],
-                )
+        mock_beamline = MockBeamline(initial_beam)
+        initial_bctrl = np.random.randn()
+        mock_beamline.magnet.bctrl = initial_bctrl
 
-                # Call the measure method
-                result = quad_scan.measure()
+        # Instantiate the QuadScanEmittance object
+        beamsize_measurement = mock_beamline.beamsize_measurement
+        quad_scan = MLQuadScanEmittance(
+            energy=1e9 * 299.792458 / 1e3,
+            magnet=mock_beamline.magnet,
+            beamsize_measurement=beamsize_measurement,
+            wait_time=1e-3,
+            rmat=rmat,
+            design_twiss=design_twiss_ele,
+            n_initial_points=3,
+            n_iterations=3,
+            max_scan_range=[-10, 10],
+        )
 
-                # plot_quad_scan_result(result)
+        # Call the measure method
+        result = quad_scan.measure()
 
-                quad_scan.X.generator.visualize_model(
-                    exponentiate=True,
-                    show_feasibility=True,
-                )
-                quad_scan.X.data.plot(y="k")
+        # plot_quad_scan_result(result)
 
-                # check resulting calculations against cheetah simulation ground truth
-                assert np.allclose(
-                    result.emittance,
-                    np.array([1.0e-2, 1.0e-1]).reshape(2, 1),
-                    rtol=1.5e-1,
-                )
-                assert np.allclose(
-                    result.beam_matrix,
-                    np.array([[5.0e-2, -5.0e-2, 5.2e-2], [0.3, -0.3, 0.33333328]]),
-                    rtol=2.0e-1,
-                )
+        quad_scan.X.generator.visualize_model(
+            exponentiate=True,
+            show_feasibility=True,
+        )
+        quad_scan.X.data.plot(y="k")
 
-                # make sure that we return the initial quadrupole setting at the end
-                assert mock_beamline.magnet.bctrl == initial_bctrl
+        # check resulting calculations against cheetah simulation ground truth
+        assert np.allclose(
+            result.emittance,
+            np.array([1.0e-2, 1.0e-1]).reshape(2, 1),
+            rtol=1.5e-1,
+        )
+        assert np.allclose(
+            result.beam_matrix,
+            np.array([[5.0e-2, -5.0e-2, 5.2e-2], [0.3, -0.3, 0.33333328]]),
+            rtol=2.0e-1,
+        )
+
+        # make sure that we return the initial quadrupole setting at the end
+        assert mock_beamline.magnet.bctrl == initial_bctrl
 
     def test_file_dump(self):
         initial_beam = ParameterBeam.from_twiss(
@@ -205,11 +204,10 @@ class TestAutomaticEmittance:
         type(screen).image = property(mock_get_image)
         screen.resolution = 1.0
 
-        image_processor = ImageProcessor(roi=CircularROI(center=[50, 50], radius=50))
+        image_processor = ImageProcessor()
         screen_measurement = ScreenBeamProfileMeasurement(
             beam_profile_device=screen,
             image_processor=image_processor,
-            beam_fit=RecursiveImageProjectionFit(),
         )
 
         # Instantiate the QuadScanEmittance object
@@ -217,7 +215,6 @@ class TestAutomaticEmittance:
             energy=1e9 * 299.792458 / 1e3,
             magnet=mock_beamline.magnet,
             beamsize_measurement=screen_measurement,
-            n_measurement_shots=3,
             wait_time=1e-3,
             rmat=rmat,
             design_twiss=design_twiss,
@@ -281,11 +278,10 @@ class TestAutomaticEmittance:
         type(screen).image = property(mock_get_image)
         screen.resolution = 1.0
 
-        image_processor = ImageProcessor(roi=CircularROI(center=[50, 50], radius=50))
+        image_processor = ImageProcessor()
         screen_measurement = ScreenBeamProfileMeasurement(
             beam_profile_device=screen,
             image_processor=image_processor,
-            beam_fit=RecursiveImageProjectionFit(),
         )
 
         def test_callback(inputs, fit_result):
@@ -297,8 +293,8 @@ class TestAutomaticEmittance:
             # For demonstration, we return the k value and the beam size
             return {
                 "my_callback_k": inputs["k"],
-                "my_callback_x_rms_px": fit_result.rms_sizes[0, 0],
-                "my_callback_y_rms_px": fit_result.rms_sizes[0, 1],
+                "my_callback_x_rms_px": fit_result.rms_sizes_all[0, 0],
+                "my_callback_y_rms_px": fit_result.rms_sizes_all[0, 1],
             }
 
         # Instantiate the QuadScanEmittance object
@@ -306,7 +302,6 @@ class TestAutomaticEmittance:
             energy=1e9 * 299.792458 / 1e3,
             magnet=mock_beamline.magnet,
             beamsize_measurement=screen_measurement,
-            n_measurement_shots=3,
             wait_time=1e-3,
             rmat=rmat,
             design_twiss=design_twiss,
@@ -362,11 +357,10 @@ class TestAutomaticEmittance:
         type(screen).image = property(mock_get_image)
         screen.resolution = 1.0
 
-        image_processor = ImageProcessor(roi=CircularROI(center=[50, 50], radius=50))
+        image_processor = ImageProcessor()
         screen_measurement = ScreenBeamProfileMeasurement(
             beam_profile_device=screen,
             image_processor=image_processor,
-            beam_fit=RecursiveImageProjectionFit(),
         )
 
         # Instantiate the QuadScanEmittance object
@@ -374,7 +368,6 @@ class TestAutomaticEmittance:
             energy=1e9 * 299.792458 / 1e3,
             magnet=mock_beamline.magnet,
             beamsize_measurement=screen_measurement,
-            n_measurement_shots=3,
             wait_time=1e-3,
             rmat=rmat,
             design_twiss=design_twiss,

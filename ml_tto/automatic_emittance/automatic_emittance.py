@@ -23,8 +23,10 @@ from lcls_tools.common.measurements.emittance_measurement import (
     QuadScanEmittance,
     EmittanceMeasurementResult,
 )
+from lcls_tools.common.measurements.screen_profile import (
+    ScreenBeamProfileMeasurement,
+)
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
-from ml_tto.automatic_emittance.screen_profile import RetryScreenBeamProfileMeasurement
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 from ml_tto.gpsr.lcls_tools import (
     get_lcls_tools_data,
@@ -66,7 +68,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     """
 
-    beamsize_measurement: RetryScreenBeamProfileMeasurement
+    beamsize_measurement: ScreenBeamProfileMeasurement
+    save_location: Optional[str] = None
 
     # basic settings for the scan
     n_initial_points: PositiveInt = 5
