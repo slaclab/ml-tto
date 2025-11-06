@@ -356,34 +356,8 @@ def gpsr_fit_quad_scan(
         dimensions = ["x", "px", "y", "py"]
         bin_ranges = None
 
-        # pass 1: read checkpoints and save reconstructed beams and predicted measurements
-        print('generating reconstructed beams and predicted measurements')
-        for epoch in tqdm(range(n_epochs)):
-            # load weights from checkpoint
-            checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
-            checkpoint = torch.load(checkpoint_path)
-            litgpsr.load_state_dict(checkpoint["state_dict"])
-            litgpsr.to("cuda")
-
-            # perform 4d reconstruction
-            reconstructed_beam = litgpsr.gpsr_model.beam_generator()
-
-            # predict the measurements to compare with training data
-            pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
-            pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
-
-            # save reconstruction and delete checkpoint
-            beam_data_fname = f"beam-{epoch:03d}.pt"
-            beam_data_path = os.path.join(checkpoint_dir, beam_data_fname)
-            torch.save(reconstructed_beam, beam_data_path)
-
-            pred_data_fname = f"pred-{epoch:03d}.pt"
-            pred_data_path = os.path.join(checkpoint_dir, pred_data_fname)
-            torch.save(pred_dset, pred_data_path)
-
-            os.remove(checkpoint_path)
-
         # determine bin ranges from last epoch
+        # source: https://github.com/desy-ml/cheetah/blob/200ef469b9ac776ea17e818a7022e2b9d306d4ca/cheetah/particles/particle_beam.py#L1408
         full_tensor = (
             torch.stack([getattr(reconstructed_beam, dimension) for dimension in dimensions], dim=-2)
             .cpu()
@@ -400,38 +374,33 @@ def gpsr_fit_quad_scan(
             for i in range(full_tensor.shape[-2])
         ]
 
-        # pass 2: read and plot reconstructed beams and predicted measurements
-        print('generating plots')
+        print('generating distribution and measurement plots')
         for epoch in tqdm(range(n_epochs)):
-            # load reconstructed beam
-            beam_data_fname = f"beam-{epoch:03d}.pt"
-            beam_data_path = os.path.join(checkpoint_dir, beam_data_fname)
-            with torch.serialization.safe_globals([ParticleBeam, Species]):
-                reconstructed_beam = torch.load(beam_data_path)
+            # load weights from checkpoint
+            checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
+            checkpoint = torch.load(checkpoint_path)
+            litgpsr.load_state_dict(checkpoint["state_dict"])
+            litgpsr.to("cuda")
 
-            # generate distribution plot
+            # generate and save distribution plot
+            reconstructed_beam = litgpsr.gpsr_model.beam_generator()
             fig, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
             fig.suptitle(f"4D reconstruction (epoch {epoch + 1})")
-
-            # save frame
             img = fig_to_png(fig)
             beam_frames.append(img)
             plt.close()
 
-            # load predicted measurements
-            pred_data_fname = f"pred-{epoch:03d}.pt"
-            pred_data_path = os.path.join(checkpoint_dir, pred_data_fname)
-            with torch.serialization.safe_globals([QuadScanDataset, Screen]):
-                pred_dset = torch.load(pred_data_path)
-
-            # generated measurement plot
+            # generate and save measurement plot
+            pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
+            pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
             fig = plot_measurement_comparison(quad_strengths, train_dset, pred_dset)
             fig.suptitle(f"Training vs. predicted data (epoch {epoch + 1})")
-
-            # save frame
             img = fig_to_png(fig)
             pred_frames.append(img)
             plt.close()
+
+            # delete checkpoint
+            os.remove(checkpoint_path)
 
         # save frames as gif
         print('saving animations to gif')
