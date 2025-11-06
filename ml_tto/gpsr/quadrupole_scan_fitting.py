@@ -403,11 +403,13 @@ def gpsr_fit_quad_scan(
             os.remove(checkpoint_path)
 
         # save frames as gif
-        print("saving animations to gif")
-        dist_gif_path = os.path.join(save_location, save_name + "_dist") + ".gif"
-        save_gif(dist_frames, frame_delay, loop_delay, dist_gif_path)
+        save_name = save_name or "gpsr_training"
+        if save_location is not None:
+            print("saving animations to gif")
+            dist_gif_path = os.path.join(save_location, save_name + "_dist") + ".gif"
+            save_gif(dist_frames, frame_delay, loop_delay, dist_gif_path)
 
-        pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
-        save_gif(pred_frames, frame_delay, loop_delay, pred_gif_path)
+            pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
+            save_gif(pred_frames, frame_delay, loop_delay, pred_gif_path)
 
     return results
