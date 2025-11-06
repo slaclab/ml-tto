@@ -19,18 +19,19 @@ from tenacity import (
     RetryError,
 )
 
-from ml_tto.automatic_emittance.emittance import (
+from lcls_tools.common.measurements.emittance_measurement import (
     QuadScanEmittance,
     EmittanceMeasurementResult,
 )
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
+from ml_tto.automatic_emittance.screen_profile import RetryScreenBeamProfileMeasurement
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 from ml_tto.gpsr.lcls_tools import (
     get_lcls_tools_data,
     process_automatic_emittance_measurement_data,
 )
 from ml_tto.gpsr.quadrupole_scan_fitting import gpsr_fit_quad_scan
-from ml_tto.errors import NotReadyError, NoBeamError, BackgroundMismatchError
+from ml_tto.errors import NotReadyError, BackgroundMismatchError
 
 logger = logging.getLogger("auto_quad_scan")
 
@@ -64,6 +65,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
             Additional results will be added to the `X.data` attribute.
 
     """
+
+    beamsize_measurement: RetryScreenBeamProfileMeasurement
 
     # basic settings for the scan
     n_initial_points: PositiveInt = 5
@@ -120,8 +123,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
     def _evaluate(self, inputs):
         # validate that we are ready to set the quad
         self.ready_check()
-
-        old_quad_strength = self.magnet.bctrl
 
         # set quadrupole strength
         logger.debug(f"Setting quadrupole strength to {inputs['k']}")
@@ -182,8 +183,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self._info[-1] = fit_result
 
         # collect results
-        rms_x = fit_result.rms_sizes[:, 0]
-        rms_y = fit_result.rms_sizes[:, 1]
+        rms_x = fit_result.rms_sizes_all[:, 0]
+        rms_y = fit_result.rms_sizes_all[:, 1]
 
         results = {
             "x_rms_px_sq": rms_x**2,
@@ -274,11 +275,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         """
         beam_sizes = []
         for ele in self._info:
-            beam_sizes.append(
-                np.mean(ele.rms_sizes, axis=0)
-                * self.beamsize_measurement.beam_profile_device.resolution
-                * 1e-6
-            )
+            beam_sizes.append(ele.rms_sizes * 1e-6)
 
         # get scan values and extend for each direction
         scan_values = np.tile(np.array(self.scan_values), (2, 1))
@@ -290,11 +287,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         dim_names = ["x", "y"]
         for i in range(2):
             # crop the scans using concavity filter and max beam size filter
-            cutoff_size = (
-                self._get_cutoff_beamsize(dim_names[i])
-                * self.beamsize_measurement.beam_profile_device.resolution
-                * 1e-6
-            )
+            cutoff_size = self._get_cutoff_beamsize(dim_names[i]) * 1e-6
             sv_cropped, bs_cropped = crop_scan(
                 scan_values=scan_values[i],
                 beam_sizes=beam_sizes[i],
