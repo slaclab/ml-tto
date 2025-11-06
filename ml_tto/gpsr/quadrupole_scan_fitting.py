@@ -16,6 +16,8 @@ from gpsr.datasets import QuadScanDataset
 from gpsr.data_processing import process_images
 from gpsr.analysis import get_beam_fraction
 from cheetah.accelerator import Screen
+from cheetah.particles.particle_beam import ParticleBeam
+from cheetah.particles.species import Species
 import lightning as L
 
 import time
@@ -350,9 +352,11 @@ def gpsr_fit_quad_scan(
 
     if animate:
         # generate reconstruction animation
-        print('generating distribution images')
         beam_frames = []
         pred_frames = []
+
+        # pass 1: read checkpoints and save reconstructed beams and predicted measurements
+        print('generating reconstructed beams and predicted measurements')
         for epoch in tqdm(range(n_epochs)):
             # load weights from checkpoint
             checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
@@ -362,6 +366,30 @@ def gpsr_fit_quad_scan(
 
             # perform 4d reconstruction
             reconstructed_beam = litgpsr.gpsr_model.beam_generator()
+
+            # predict the measurements to compare with training data
+            pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
+            pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
+
+            # save reconstruction and delete checkpoint
+            beam_data_fname = f"beam-{epoch:03d}.pt"
+            beam_data_path = os.path.join(checkpoint_dir, beam_data_fname)
+            torch.save(reconstructed_beam, beam_data_path)
+            pred_data_fname = f"pred-{epoch:03d}.pt"
+            pred_data_path = os.path.join(checkpoint_dir, pred_data_fname)
+            torch.save(pred_dset, pred_data_path)
+            os.remove(checkpoint_path)
+
+        # pass 2: read and plot reconstructed beams and predicted measurements
+        print('generating plots')
+        for epoch in tqdm(range(n_epochs)):
+            # load reconstructed beam
+            beam_data_fname = f"beam-{epoch:03d}.pt"
+            beam_data_path = os.path.join(checkpoint_dir, beam_data_fname)
+            with torch.serialization.safe_globals([ParticleBeam, Species]):
+                reconstructed_beam = torch.load(beam_data_path)
+
+            # generate distribution image
             reconstructed_beam.plot_distribution(["x", "px", "y", "py"], bin_ranges=[[-1.1e-3, 1.1e-3], [-0.2e-3, 0.2e-3], [-1e-3, 1e-3], [-0.2e-3, 0.2e-3]])
             plt.suptitle(f"4D reconstruction (epoch {epoch + 1})")
 
@@ -373,10 +401,11 @@ def gpsr_fit_quad_scan(
             img = Image.open(buf)
             beam_frames.append(img)
 
-            # predict the measurements to compare with training data
-            #pred = gpsr_model(train_dset.parameters)[0].detach()
-            pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
-            pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
+            # load predicted measurements
+            pred_data_fname = f"pred-{epoch:03d}.pt"
+            pred_data_path = os.path.join(checkpoint_dir, pred_data_fname)
+            with torch.serialization.safe_globals([QuadScanDataset, Screen]):
+                pred_dset = torch.load(pred_data_path)
 
             # compare the predicted measurements with the training data
             fig, ax = plt.subplots(
