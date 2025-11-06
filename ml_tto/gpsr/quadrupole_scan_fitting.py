@@ -354,6 +354,8 @@ def gpsr_fit_quad_scan(
         # generate reconstruction animation
         beam_frames = []
         pred_frames = []
+        dimensions = ["x", "px", "y", "py"]
+        bin_ranges = None
 
         # pass 1: read checkpoints and save reconstructed beams and predicted measurements
         print('generating reconstructed beams and predicted measurements')
@@ -380,6 +382,23 @@ def gpsr_fit_quad_scan(
             torch.save(pred_dset, pred_data_path)
             os.remove(checkpoint_path)
 
+        # determine bin ranges from last epoch
+        full_tensor = (
+            torch.stack([getattr(reconstructed_beam, dimension) for dimension in dimensions], dim=-2)
+            .cpu()
+            .detach()
+            .numpy()
+        )
+        bin_ranges = [
+            (
+                full_tensor[i, :].min()
+                - (full_tensor[i, :].max() - full_tensor[i, :].min()) / 10,
+                full_tensor[i, :].max()
+                + (full_tensor[i, :].max() - full_tensor[i, :].min()) / 10,
+            )
+            for i in range(full_tensor.shape[-2])
+        ]
+
         # pass 2: read and plot reconstructed beams and predicted measurements
         print('generating plots')
         for epoch in tqdm(range(n_epochs)):
@@ -390,7 +409,7 @@ def gpsr_fit_quad_scan(
                 reconstructed_beam = torch.load(beam_data_path)
 
             # generate distribution image
-            reconstructed_beam.plot_distribution(["x", "px", "y", "py"], bin_ranges=[[-1.1e-3, 1.1e-3], [-0.2e-3, 0.2e-3], [-1e-3, 1e-3], [-0.2e-3, 0.2e-3]])
+            reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
             plt.suptitle(f"4D reconstruction (epoch {epoch + 1})")
 
             # save frame
@@ -467,6 +486,7 @@ def gpsr_fit_quad_scan(
                 ax[k, 0].set_ylabel("y [mm]")
 
             fig.set_size_inches(len(quad_strengths), 5)
+            plt.suptitle(f"Training vs. predicted data (epoch {epoch + 1})")
 
             # save frame
             buf = io.BytesIO()
