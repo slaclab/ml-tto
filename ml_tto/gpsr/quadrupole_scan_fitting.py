@@ -27,7 +27,7 @@ from ml_tto.gpsr.utils import (
     CustomLeakyReLU,
     MetricTracker,
 )
-from ml_tto.gpsr.visualization import fig_to_png, visualize_quad_scan_result, save_gif
+from ml_tto.gpsr.visualization import fig_to_png, plot_measurement_comparison, visualize_quad_scan_result, save_gif
 
 
 def gpsr_fit_file(
@@ -376,9 +376,11 @@ def gpsr_fit_quad_scan(
             beam_data_fname = f"beam-{epoch:03d}.pt"
             beam_data_path = os.path.join(checkpoint_dir, beam_data_fname)
             torch.save(reconstructed_beam, beam_data_path)
+
             pred_data_fname = f"pred-{epoch:03d}.pt"
             pred_data_path = os.path.join(checkpoint_dir, pred_data_fname)
             torch.save(pred_dset, pred_data_path)
+
             os.remove(checkpoint_path)
 
         # determine bin ranges from last epoch
@@ -407,7 +409,7 @@ def gpsr_fit_quad_scan(
             with torch.serialization.safe_globals([ParticleBeam, Species]):
                 reconstructed_beam = torch.load(beam_data_path)
 
-            # generate distribution image
+            # generate distribution plot
             fig, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
             fig.suptitle(f"4D reconstruction (epoch {epoch + 1})")
 
@@ -422,66 +424,8 @@ def gpsr_fit_quad_scan(
             with torch.serialization.safe_globals([QuadScanDataset, Screen]):
                 pred_dset = torch.load(pred_data_path)
 
-            # compare the predicted measurements with the training data
-            fig, ax = plt.subplots(
-                3,
-                len(quad_strengths),
-                sharex="all",
-                sharey="all",
-                gridspec_kw={"hspace": 0.05, "wspace": 0.05},
-            )
-
-            # plot training / predicted data
-            i = 0
-            for ele in [train_dset, pred_dset]:
-                ele.plot_data(ax=ax[i], add_labels=False)
-                i += 1
-
-            # plot overlay comparison
-            train_dset.plot_data(
-                overlay_data=pred_dset,
-                overlay_kwargs={"levels": [0.01, 0.25, 0.75, 0.9], "cmap": "Greys"},
-                filter_size=0,
-                ax=ax[2],
-                add_labels=False,
-            )
-
-            # add labels
-            ax[0, 0].text(
-                -0.1,
-                1.1,
-                "$k_1$ (1/m$^2$)",
-                va="bottom",
-                ha="right",
-                transform=ax[0, 0].transAxes,
-            )
-
-            label = ["Measured", "Predicted", "Overlay"]
-            for kk in range(3):
-                ax[kk, 0].text(
-                    -1.25,
-                    0.5,
-                    label[kk],
-                    va="center",
-                    ha="right",
-                    transform=ax[kk, 0].transAxes,
-                    rotation="vertical",
-                    size="large",
-                    weight="bold",
-                )
-
-            # set titles for each subplot
-            for j in range(len(quad_strengths)):
-                ax[0, j].set_title(f"{quad_strengths[j]:.2f}")
-
-            # set axes labels
-            for j in range(len(quad_strengths)):
-                ax[-1, j].set_xlabel("x [mm]")
-
-            for k in range(3):
-                ax[k, 0].set_ylabel("y [mm]")
-
-            fig.set_size_inches(len(quad_strengths), 5)
+            # generated measurement plot
+            fig = plot_measurement_comparison(quad_strengths, train_dset, pred_dset)
             fig.suptitle(f"Training vs. predicted data (epoch {epoch + 1})")
 
             # save frame
@@ -492,8 +436,9 @@ def gpsr_fit_quad_scan(
         # save frames as gif
         print('saving animations to gif')
         dist_gif_path = os.path.join(save_location, save_name + "_dist") + ".gif"
-        pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
         save_gif(beam_frames, frame_delay, loop_delay, dist_gif_path)
+
+        pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
         save_gif(pred_frames, frame_delay, loop_delay, pred_gif_path)
 
     return results

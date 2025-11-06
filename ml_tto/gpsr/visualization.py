@@ -6,6 +6,13 @@ import matplotlib.pyplot as plt
 def visualize_quad_scan_result(
     quad_strengths, train_dset, pred_dset, cb, stats, fractional_beam
 ):
+    fig1 = plot_measurement_comparison(quad_strengths, train_dset, pred_dset)
+    fig2 = plot_training_loss(cb)
+    fig3 = plot_4d_distribution(fractional_beam, stats)
+    return fig1, fig2, fig3
+
+
+def plot_measurement_comparison(quad_strengths, train_dset, pred_dset):
     # compare the predicted measurements with the training data
     fig, ax = plt.subplots(
         3,
@@ -66,15 +73,21 @@ def visualize_quad_scan_result(
         ax[k, 0].set_ylabel("y [mm]")
 
     fig.set_size_inches(len(quad_strengths), 5)
+    return fig
 
+
+def plot_training_loss(cb):
     # plot loss curve
-    fig2, ax2 = plt.subplots()
-    ax2.semilogy(cb.training_loss)
-    ax2.set_xlabel("Epoch")
-    ax2.set_ylabel("Training Loss")
+    fig, ax = plt.subplots()
+    ax.semilogy(cb.training_loss)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Training Loss")
+    return fig
 
+
+def plot_4d_distribution(fractional_beam, stats):
     # plot distribution
-    fig3, ax = fractional_beam.plot_distribution(dimensions=("x", "px", "y", "py"))
+    fig, ax = fractional_beam.plot_distribution(dimensions=("x", "px", "y", "py"))
 
     # add distribution statistics to plot distribution in the top left corner
     # TODO: compute and display twiss parameters at nominal quad strength
@@ -106,7 +119,7 @@ def visualize_quad_scan_result(
         except KeyError:
             pass
 
-    fig3.text(
+    fig.text(
         0.6,
         0.9,
         info_str,
@@ -115,7 +128,7 @@ def visualize_quad_scan_result(
         fontsize=15,
     )
 
-    return fig, fig2, fig3
+    return fig
 
 
 def fig_to_png(fig):
