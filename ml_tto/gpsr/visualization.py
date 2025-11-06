@@ -1,3 +1,5 @@
+import io
+from PIL import Image
 import matplotlib.pyplot as plt
 
 
@@ -114,3 +116,19 @@ def visualize_quad_scan_result(
     )
 
     return fig, fig2, fig3
+
+
+def fig_to_png(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    buf.seek(0)
+    return Image.open(buf)
+
+
+def save_gif(frames, frame_delay, loop_delay, gif_path):
+    durations = [frame_delay * 1000] * (len(frames) - 1) + [loop_delay * 1000]
+    frames[0].save(gif_path,
+               save_all=True,
+               append_images=frames[1:],
+               duration=durations,    # duration per frame in ms
+               loop=0)                # 0 means loop forever

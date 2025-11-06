@@ -1,5 +1,4 @@
 import atexit
-import io
 import shutil
 import tempfile
 import torch
@@ -28,7 +27,7 @@ from ml_tto.gpsr.utils import (
     CustomLeakyReLU,
     MetricTracker,
 )
-from ml_tto.gpsr.visualization import visualize_quad_scan_result
+from ml_tto.gpsr.visualization import fig_to_png, visualize_quad_scan_result, save_gif
 
 
 def gpsr_fit_file(
@@ -409,16 +408,13 @@ def gpsr_fit_quad_scan(
                 reconstructed_beam = torch.load(beam_data_path)
 
             # generate distribution image
-            reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
-            plt.suptitle(f"4D reconstruction (epoch {epoch + 1})")
+            fig, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
+            fig.suptitle(f"4D reconstruction (epoch {epoch + 1})")
 
             # save frame
-            buf = io.BytesIO()
-            plt.savefig(buf, format="png")
-            plt.close()
-            buf.seek(0)
-            img = Image.open(buf)
+            img = fig_to_png(fig)
             beam_frames.append(img)
+            plt.close()
 
             # load predicted measurements
             pred_data_fname = f"pred-{epoch:03d}.pt"
@@ -486,33 +482,18 @@ def gpsr_fit_quad_scan(
                 ax[k, 0].set_ylabel("y [mm]")
 
             fig.set_size_inches(len(quad_strengths), 5)
-            plt.suptitle(f"Training vs. predicted data (epoch {epoch + 1})")
+            fig.suptitle(f"Training vs. predicted data (epoch {epoch + 1})")
 
             # save frame
-            buf = io.BytesIO()
-            plt.savefig(buf, format="png")
-            plt.close()
-            buf.seek(0)
-            img = Image.open(buf)
+            img = fig_to_png(fig)
             pred_frames.append(img)
+            plt.close()
 
         # save frames as gif
         print('saving animations to gif')
-        durations = [frame_delay * 1000] * (len(beam_frames) - 1) + [loop_delay * 1000]
-        animation_path = os.path.join(save_location, save_name + "_4d_recon") + ".gif"
-        beam_frames[0].save(animation_path,
-                   save_all=True,
-                   append_images=beam_frames[1:],
-                   duration=durations,   # duration per frame in ms
-                   loop=0)         # 0 means loop forever
-
-        # save frames as gif
-        durations = [frame_delay * 1000] * (len(pred_frames) - 1) + [loop_delay * 1000]
-        animation_path = os.path.join(save_location, save_name + "_pred") + ".gif"
-        pred_frames[0].save(animation_path,
-                   save_all=True,
-                   append_images=pred_frames[1:],
-                   duration=durations,   # duration per frame in ms
-                   loop=0)         # 0 means loop forever
+        dist_gif_path = os.path.join(save_location, save_name + "_dist") + ".gif"
+        pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
+        save_gif(beam_frames, frame_delay, loop_delay, dist_gif_path)
+        save_gif(pred_frames, frame_delay, loop_delay, pred_gif_path)
 
     return results
