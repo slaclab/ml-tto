@@ -351,7 +351,7 @@ def gpsr_fit_quad_scan(
 
     if animate:
         # generate reconstruction animation
-        beam_frames = []
+        dist_frames = []
         pred_frames = []
         dimensions = ["x", "px", "y", "py"]
         bin_ranges = None
@@ -374,7 +374,7 @@ def gpsr_fit_quad_scan(
             for i in range(full_tensor.shape[-2])
         ]
 
-        print('generating distribution and measurement plots')
+        print("generating distribution and measurement plots")
         for epoch in tqdm(range(n_epochs)):
             # load weights from checkpoint
             checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
@@ -385,9 +385,9 @@ def gpsr_fit_quad_scan(
             # generate and save distribution plot
             reconstructed_beam = litgpsr.gpsr_model.beam_generator()
             fig, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
-            fig.suptitle(f"4D reconstruction (epoch {epoch + 1})")
+            fig.suptitle(f"4D phase space distribution (epoch {epoch + 1})")
             img = fig_to_png(fig)
-            beam_frames.append(img)
+            dist_frames.append(img)
             plt.close()
 
             # generate and save measurement plot
@@ -403,9 +403,9 @@ def gpsr_fit_quad_scan(
             os.remove(checkpoint_path)
 
         # save frames as gif
-        print('saving animations to gif')
+        print("saving animations to gif")
         dist_gif_path = os.path.join(save_location, save_name + "_dist") + ".gif"
-        save_gif(beam_frames, frame_delay, loop_delay, dist_gif_path)
+        save_gif(dist_frames, frame_delay, loop_delay, dist_gif_path)
 
         pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
         save_gif(pred_frames, frame_delay, loop_delay, pred_gif_path)
