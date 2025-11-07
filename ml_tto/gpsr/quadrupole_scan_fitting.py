@@ -5,7 +5,8 @@ import torch
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
+from matplotlib import font_manager
+from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
 from gpsr.modeling import GPSR
@@ -201,11 +202,11 @@ def gpsr_fit_quad_scan(
     save_name: str, optional
         Name to use for saving the diagnostic plots.
     animate: bool, optional
-        Whether to save diagnostic animations.
+        Whether to save diagnostic animation.
     frame_delay: float, optional
-        Delay between frames of each animation in seconds.
+        Delay between frames of the animation in seconds.
     loop_delay: float, optional
-        Delay between loops of each animation in seconds.
+        Delay between loops of the animation in seconds.
 
     Returns
     -------
@@ -351,8 +352,7 @@ def gpsr_fit_quad_scan(
 
     if animate:
         # generate reconstruction animation
-        dist_frames = []
-        pred_frames = []
+        gif_frames = []
         dimensions = ["x", "px", "y", "py"]
         bin_ranges = None
 
@@ -382,22 +382,46 @@ def gpsr_fit_quad_scan(
             litgpsr.load_state_dict(checkpoint["state_dict"])
             litgpsr.to("cuda")
 
-            # generate and save distribution plot
+            # generate distribution plot
             reconstructed_beam = litgpsr.gpsr_model.beam_generator()
-            fig, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
-            fig.suptitle(f"4D phase space distribution (epoch {epoch + 1})")
-            img = fig_to_png(fig)
-            dist_frames.append(img)
-            plt.close()
+            fig1, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
+            img1 = fig_to_png(fig1)
+            plt.close(fig1)
 
-            # generate and save measurement plot
+            # generate measurement plot
             pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
             pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
-            fig = plot_measurement_comparison(quad_strengths, train_dset, pred_dset)
-            fig.suptitle(f"Training vs. predicted data (epoch {epoch + 1})")
-            img = fig_to_png(fig)
-            pred_frames.append(img)
-            plt.close()
+            fig2 = plot_measurement_comparison(quad_strengths, train_dset, pred_dset)
+            img2 = fig_to_png(fig2)
+            plt.close(fig2)
+
+            # scale second image proportionally to match first image's height
+            width1, height1 = img1.size
+            width2, height2 = img2.size
+            new_width2 = round(width2 * (height1 / height2))
+            img2 = img2.resize((new_width2, height1), Image.Resampling.LANCZOS)
+
+            # add title
+            title_img_height = 50
+            title_font_size = 30
+            total_width = width1 + new_width2
+            title_img = Image.new("RGB", (total_width, title_img_height), "white")
+            draw = ImageDraw.Draw(title_img)
+            font_family = plt.rcParams["font.family"]
+            font_properties = font_manager.FontProperties(family=font_family)
+            font_path = font_manager.findfont(font_properties)
+            font = ImageFont.truetype(font_path, title_font_size)
+            title = f"Reconstructed distribution and predicted measurements (epoch {epoch + 1})"
+            _, _, text_width, text_height = draw.textbbox((0, 0), title, font=font)
+            draw.text(((total_width - text_width) / 2, (title_img_height - text_height) / 2), title, font=font, fill="black")
+
+            # combine elements together
+            total_height = title_img_height + height1
+            img = Image.new("RGB", (total_width, total_height))
+            img.paste(title_img, (0, 0))
+            img.paste(img1, (0, title_img_height))
+            img.paste(img2, (width1, title_img_height))
+            gif_frames.append(img)
 
             # delete checkpoint
             os.remove(checkpoint_path)
@@ -405,11 +429,8 @@ def gpsr_fit_quad_scan(
         # save frames as gif
         save_name = save_name or "gpsr_training"
         if save_location is not None:
-            print("saving animations to gif")
-            dist_gif_path = os.path.join(save_location, save_name + "_dist") + ".gif"
-            save_gif(dist_frames, frame_delay, loop_delay, dist_gif_path)
-
-            pred_gif_path = os.path.join(save_location, save_name + "_pred") + ".gif"
-            save_gif(pred_frames, frame_delay, loop_delay, pred_gif_path)
+            print("saving animation to gif")
+            gif_path = os.path.join(save_location, save_name + "_dist_pred") + ".gif"
+            save_gif(gif_frames, frame_delay, loop_delay, gif_path)
 
     return results
