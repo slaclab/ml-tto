@@ -5,8 +5,6 @@ import torch
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import font_manager
-from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
 from gpsr.modeling import GPSR
@@ -16,8 +14,6 @@ from gpsr.datasets import QuadScanDataset
 from gpsr.data_processing import process_images
 from gpsr.analysis import get_beam_fraction
 from cheetah.accelerator import Screen
-from cheetah.particles.particle_beam import ParticleBeam
-from cheetah.particles.species import Species
 import lightning as L
 
 import time
@@ -28,7 +24,7 @@ from ml_tto.gpsr.utils import (
     CustomLeakyReLU,
     MetricTracker,
 )
-from ml_tto.gpsr.visualization import fig_to_png, plot_measurement_comparison, visualize_quad_scan_result, save_gif
+from ml_tto.gpsr.visualization import combine_images_with_title, fig_to_png, plot_measurement_comparison, visualize_quad_scan_result, save_gif
 
 
 def gpsr_fit_file(
@@ -395,33 +391,10 @@ def gpsr_fit_quad_scan(
             img2 = fig_to_png(fig2)
             plt.close(fig2)
 
-            # scale second image proportionally to match first image's height
-            width1, height1 = img1.size
-            width2, height2 = img2.size
-            new_width2 = round(width2 * (height1 / height2))
-            img2 = img2.resize((new_width2, height1), Image.Resampling.LANCZOS)
-
-            # add title
-            title_img_height = 50
-            title_font_size = 30
-            total_width = width1 + new_width2
-            title_img = Image.new("RGB", (total_width, title_img_height), "white")
-            draw = ImageDraw.Draw(title_img)
-            font_family = plt.rcParams["font.family"]
-            font_properties = font_manager.FontProperties(family=font_family)
-            font_path = font_manager.findfont(font_properties)
-            font = ImageFont.truetype(font_path, title_font_size)
+            # place plots side by side
             title = f"Reconstructed distribution and predicted measurements (epoch {epoch + 1})"
-            _, _, text_width, text_height = draw.textbbox((0, 0), title, font=font)
-            draw.text(((total_width - text_width) / 2, (title_img_height - text_height) / 2), title, font=font, fill="black")
-
-            # combine elements together
-            total_height = title_img_height + height1
-            img = Image.new("RGB", (total_width, total_height))
-            img.paste(title_img, (0, 0))
-            img.paste(img1, (0, title_img_height))
-            img.paste(img2, (width1, title_img_height))
-            gif_frames.append(img)
+            combined = combine_images_with_title(img1, img2, title)
+            gif_frames.append(combined)
 
             # delete checkpoint
             os.remove(checkpoint_path)

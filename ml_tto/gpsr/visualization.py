@@ -1,6 +1,7 @@
 import io
-from PIL import Image
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
+from PIL import Image, ImageDraw, ImageFont
 
 
 def visualize_quad_scan_result(
@@ -129,6 +130,37 @@ def plot_4d_distribution(fractional_beam, stats):
     )
 
     return fig
+
+
+def combine_images_with_title(img1, img2, title, title_height=50, font_size=30):
+    # scale second image proportionally to match first image's height
+    w1, h1 = img1.size
+    w2, h2 = img2.size
+    new_w2 = round(w2 * (h1 / h2))
+    img2 = img2.resize((new_w2, h1), Image.Resampling.LANCZOS)
+
+    # prepare title banner
+    total_width = w1 + new_w2
+    title_img = Image.new("RGB", (total_width, title_height), "white")
+
+    draw = ImageDraw.Draw(title_img)
+    font_properties = font_manager.FontProperties(family=["sans-serif"])
+    font_path = font_manager.findfont(font_properties)
+    font = ImageFont.truetype(font_path, font_size)
+
+    # draw centered title
+    _, _, text_w, text_h = draw.textbbox((0, 0), title, font=font)
+    draw.text(((total_width - text_w) / 2, (title_height - text_h) / 2),
+              title, font=font, fill="black")
+
+    # combine everything
+    total_height = title_height + h1
+    combined = Image.new("RGB", (total_width, total_height), "white")
+    combined.paste(title_img, (0, 0))
+    combined.paste(img1, (0, title_height))
+    combined.paste(img2, (w1, title_height))
+
+    return combined
 
 
 def fig_to_png(fig):
