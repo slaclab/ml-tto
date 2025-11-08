@@ -58,7 +58,6 @@ def crop_scan(
         cutoff_mask = np.zeros(len(beam_sizes_cropped), dtype=bool)
     beam_sizes_cropped[cutoff_mask] = np.nan
 
-
     if visualize:
         # evaluate the GP fit and its concavity on a linspace
         fit_x = torch.linspace(scan_values.min(), scan_values.max(), 100).reshape(-1, 1)
