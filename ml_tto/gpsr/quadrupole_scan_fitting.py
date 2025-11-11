@@ -1,11 +1,7 @@
-import atexit
-import shutil
-import tempfile
 import torch
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 
 from gpsr.modeling import GPSR
 from gpsr.train import LitGPSR
@@ -24,7 +20,7 @@ from ml_tto.gpsr.utils import (
     CustomLeakyReLU,
     MetricTracker,
 )
-from ml_tto.gpsr.visualization import combine_images_with_title, fig_to_png, plot_measurement_comparison, visualize_quad_scan_result, save_gif
+from ml_tto.gpsr.visualization import visualize_quad_scan_result
 
 
 def gpsr_fit_file(
@@ -35,6 +31,7 @@ def gpsr_fit_file(
     max_pixels: int = 1e5,
     n_stds: int = 5,
     threshold_multiplier=1.2,
+    callbacks: list = None,
     **kwargs,
 ):
     """
@@ -53,6 +50,8 @@ def gpsr_fit_file(
         The location to save diagnostic plots.
     visualize: bool, optional
         Whether to visualize the diagnostic plots.
+    callbacks: list, optional
+        PyTorch Lightning callbacks to apply during training (in addition to MetricTracker).
     kwargs:
         Optional arguments passed to `gpsr_fit_quad_scan`
 
@@ -117,6 +116,7 @@ def gpsr_fit_file(
         visualize=visualize,
         save_location=save_location,
         save_name=save_name,
+        callbacks=callbacks,
         **kwargs,
     )
 
@@ -137,9 +137,7 @@ def gpsr_fit_quad_scan(
     visualize=False,
     save_location=None,
     save_name=None,
-    animate=False,
-    frame_delay=0.25,
-    loop_delay=5.0,
+    callbacks=None,
 ):
     """
     Basic method for using GPSR to fit quadrupole scan data.
@@ -197,12 +195,8 @@ def gpsr_fit_quad_scan(
         Location to save diagnostic plots.
     save_name: str, optional
         Name to use for saving the diagnostic plots.
-    animate: bool, optional
-        Whether to save diagnostic animation.
-    frame_delay: float, optional
-        Delay between frames of the animation in seconds.
-    loop_delay: float, optional
-        Delay between loops of the animation in seconds.
+    callbacks: list, optional
+        PyTorch Lightning callbacks to apply during training (in addition to MetricTracker).
 
     Returns
     -------
@@ -277,21 +271,11 @@ def gpsr_fit_quad_scan(
     litgpsr = LitGPSR(gpsr_model, lr=learning_rate)
 
     # create callbacks
+    if callbacks is None:
+        callbacks = []
+
     metric_cb = MetricTracker()
-    if animate:
-        # temporarily save checkpoints for reconstruction
-        checkpoint_dir = tempfile.mkdtemp(dir=os.getcwd())
-        atexit.register(shutil.rmtree, checkpoint_dir) # clean up on exit, even if exception is raised
-        checkpoint_cb = L.pytorch.callbacks.ModelCheckpoint(
-            save_weights_only=True,
-            every_n_epochs=1,
-            save_top_k=-1,
-            dirpath=checkpoint_dir,
-            filename="model-{epoch:03d}",
-        )
-        callbacks = [metric_cb, checkpoint_cb]
-    else:
-        callbacks = [metric_cb]
+    callbacks.append(metric_cb)
 
     # create a pytorch lightning trainer
     trainer = L.Trainer(
@@ -325,7 +309,7 @@ def gpsr_fit_quad_scan(
 
     # get the reconstructed beam emittances and twiss parameters
     results = get_beam_stats(fractional_beam, gpsr_model, design_twiss)
-    if visualize:
+    if visualize or save_location is not None:
         fig1, fig2, fig3 = visualize_quad_scan_result(
             quad_strengths, train_dset, pred_dset, metric_cb, results, fractional_beam
         )
@@ -345,65 +329,5 @@ def gpsr_fit_quad_scan(
             "training_dataset": train_dset,
         }
     )
-
-    if animate:
-        # generate reconstruction animation
-        gif_frames = []
-        dimensions = ["x", "px", "y", "py"]
-        bin_ranges = None
-
-        # determine bin ranges from last epoch
-        # source: https://github.com/desy-ml/cheetah/blob/200ef469b9ac776ea17e818a7022e2b9d306d4ca/cheetah/particles/particle_beam.py#L1408
-        full_tensor = (
-            torch.stack([getattr(reconstructed_beam, dimension) for dimension in dimensions], dim=-2)
-            .cpu()
-            .detach()
-            .numpy()
-        )
-        bin_ranges = [
-            (
-                full_tensor[i, :].min()
-                - (full_tensor[i, :].max() - full_tensor[i, :].min()) / 10,
-                full_tensor[i, :].max()
-                + (full_tensor[i, :].max() - full_tensor[i, :].min()) / 10,
-            )
-            for i in range(full_tensor.shape[-2])
-        ]
-
-        print("generating distribution and measurement plots")
-        for epoch in tqdm(range(n_epochs)):
-            # load weights from checkpoint
-            checkpoint_path = checkpoint_cb.format_checkpoint_name({"epoch": epoch})
-            checkpoint = torch.load(checkpoint_path)
-            litgpsr.load_state_dict(checkpoint["state_dict"])
-            litgpsr.to("cuda")
-
-            # generate distribution plot
-            reconstructed_beam = litgpsr.gpsr_model.beam_generator()
-            fig1, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
-            img1 = fig_to_png(fig1)
-            plt.close(fig1)
-
-            # generate measurement plot
-            pred = litgpsr.gpsr_model(train_dset.parameters)[0].detach()
-            pred_dset = QuadScanDataset(train_dset.parameters, (pred.cpu(),), screen)
-            fig2 = plot_measurement_comparison(quad_strengths, train_dset, pred_dset)
-            img2 = fig_to_png(fig2)
-            plt.close(fig2)
-
-            # place plots side by side
-            title = f"Reconstructed distribution and predicted measurements (epoch {epoch + 1})"
-            combined = combine_images_with_title(img1, img2, title)
-            gif_frames.append(combined)
-
-            # delete checkpoint
-            os.remove(checkpoint_path)
-
-        # save frames as gif
-        save_name = save_name or "gpsr_training"
-        if save_location is not None:
-            print("saving animation to gif")
-            gif_path = os.path.join(save_location, save_name + "_dist_pred") + ".gif"
-            save_gif(gif_frames, frame_delay, loop_delay, gif_path)
 
     return results
