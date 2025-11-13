@@ -78,7 +78,7 @@ def run_auto_focusing(
     try:
         X.evaluate_data(env.get_variables(vocs.variables.keys()))
         if X.vocs.select_best(X.data)[1] < target_value:
-            logger.info("converged")
+            logger.info(f"converged with value {X.vocs.select_best(X.data)[1]}")
             return X
 
         random_sample_region = get_local_region(
@@ -92,12 +92,12 @@ def run_auto_focusing(
 
         for i in range(n_steps):
             if X.vocs.select_best(X.data)[1] < target_value:
-                logger.info("converged")
+                logger.info(f"converged with value {X.vocs.select_best(X.data)[1]}")
                 break
 
             # if any of the evaluations are close to the objective value - use turbo
             if (
-                np.any(X.data[objective] < 50.0)
+                np.any(X.data[objective] < target_value * 1.5)
                 and X.generator.turbo_controller is None
             ):
                 logger.info(
@@ -121,6 +121,6 @@ def run_auto_focusing(
     finally:
         idx = X.vocs.select_best(X.data)[0]
         result = X.evaluate_data(X.data.iloc[idx][X.vocs.variable_names])
-        logger.info(f"evaluated the best point: {objective}={result[objective][0]}")
+        logger.info(f"evaluated the best point: {objective}={result[objective]}")
 
         return X
