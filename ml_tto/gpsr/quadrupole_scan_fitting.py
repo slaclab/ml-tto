@@ -31,6 +31,7 @@ def gpsr_fit_file(
     max_pixels: int = 1e5,
     n_stds: int = 5,
     threshold_multiplier=1.2,
+    callbacks: list = None,
     **kwargs,
 ):
     """
@@ -49,6 +50,8 @@ def gpsr_fit_file(
         The location to save diagnostic plots.
     visualize: bool, optional
         Whether to visualize the diagnostic plots.
+    callbacks: list, optional
+        PyTorch Lightning callbacks to apply during training (in addition to MetricTracker).
     kwargs:
         Optional arguments passed to `gpsr_fit_quad_scan`
 
@@ -113,6 +116,7 @@ def gpsr_fit_file(
         visualize=visualize,
         save_location=save_location,
         save_name=save_name,
+        callbacks=callbacks,
         **kwargs,
     )
 
@@ -133,6 +137,7 @@ def gpsr_fit_quad_scan(
     visualize=False,
     save_location=None,
     save_name=None,
+    callbacks=None,
 ):
     """
     Basic method for using GPSR to fit quadrupole scan data.
@@ -190,6 +195,8 @@ def gpsr_fit_quad_scan(
         Location to save diagnostic plots.
     save_name: str, optional
         Name to use for saving the diagnostic plots.
+    callbacks: list, optional
+        PyTorch Lightning callbacks to apply during training (in addition to MetricTracker).
 
     Returns
     -------
@@ -263,12 +270,18 @@ def gpsr_fit_quad_scan(
 
     litgpsr = LitGPSR(gpsr_model, lr=learning_rate)
 
+    # create callbacks
+    if callbacks is None:
+        callbacks = []
+
+    metric_cb = MetricTracker()
+    callbacks.append(metric_cb)
+
     # create a pytorch lightning trainer
-    cb = MetricTracker()
     trainer = L.Trainer(
         limit_train_batches=100,
         max_epochs=n_epochs,
-        callbacks=[cb],
+        callbacks=callbacks,
         accelerator="gpu",
         devices=1,
     )
@@ -296,10 +309,9 @@ def gpsr_fit_quad_scan(
 
     # get the reconstructed beam emittances and twiss parameters
     results = get_beam_stats(fractional_beam, gpsr_model, design_twiss)
-
     if visualize or save_location is not None:
         fig1, fig2, fig3 = visualize_quad_scan_result(
-            quad_strengths, train_dset, pred_dset, cb, results, fractional_beam
+            quad_strengths, train_dset, pred_dset, metric_cb, results, fractional_beam
         )
 
         save_name = save_name or "gpsr_training"
