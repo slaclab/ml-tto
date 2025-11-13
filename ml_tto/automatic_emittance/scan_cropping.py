@@ -36,13 +36,13 @@ def crop_scan(
     """
 
     # remove nans and copy input data before making edits
-    scan_values = scan_values[~np.isnan(beam_sizes)]
-    beam_sizes = beam_sizes[~np.isnan(beam_sizes)]
+    scan_values_no_nans = scan_values[~np.isnan(beam_sizes)]
+    beam_sizes_no_nans = beam_sizes[~np.isnan(beam_sizes)]
     scan_values_cropped = np.copy(scan_values)
     beam_sizes_cropped = np.copy(beam_sizes)
 
     # fit 1d gp model to data
-    model = fit_1d_gp_model(scan_values, beam_sizes**2)
+    model = fit_1d_gp_model(scan_values_no_nans, beam_sizes_no_nans**2)
 
     # identify which scan points are in regions of model upwards concavity
     data_is_concave_up = posterior_mean_concavity(model, scan_values)
@@ -57,10 +57,6 @@ def crop_scan(
     else:
         cutoff_mask = np.zeros(len(beam_sizes_cropped), dtype=bool)
     beam_sizes_cropped[cutoff_mask] = np.nan
-
-    # remove nans again
-    scan_values_cropped = scan_values_cropped[~np.isnan(beam_sizes_cropped)]
-    beam_sizes_cropped = beam_sizes_cropped[~np.isnan(beam_sizes_cropped)]
 
     if visualize:
         # evaluate the GP fit and its concavity on a linspace
