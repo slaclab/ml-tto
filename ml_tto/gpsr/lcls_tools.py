@@ -67,18 +67,18 @@ def get_lcls_tools_data(
         e_tot=energy, effective_length=l_eff, bdes=quad_pv_values
     )
 
-    processed_images = np.array(
-        [
-            metadata["image_data"][str(ele)]["processed_images"][:]
-            for ele in quad_pv_values
-        ]
-    ).squeeze()
+    # processed_images = np.array(
+    #    [
+    #        metadata["image_data"][str(ele)]["processed_images"][:]
+    #        for ele in quad_pv_values
+    #    ]
+    # ).squeeze()
     raw_images = np.array(
         [metadata["image_data"][str(ele)]["raw_images"][:] for ele in quad_pv_values]
     ).squeeze()
 
     # transpose for proper reconstruction
-    processed_images = np.transpose(processed_images, (0, 2, 1))
+    # processed_images = np.transpose(processed_images, (0, 2, 1))
     raw_images = np.transpose(raw_images, (0, 2, 1))
 
     quad_x_rmats = build_quad_rmat(
@@ -102,25 +102,17 @@ def get_lcls_tools_data(
         "energy": energy,
         "rmat": rmats,
         "resolution": resolution,
-        "images": processed_images,
         "raw_images": raw_images,
         "design_twiss": design_twiss,
     }
 
 
-def process_automatic_emittance_measurement_data(
-    data: dict,
-    n_stds: float = 8.0,
-    max_pixels: int = 1e5,
-    median_filter_size: int = 3,
-    min_signal_to_noise_ratio: float = 4.0,
-    threshold_multiplier: float = 1.0,
-):
+def process_automatic_emittance_measurement_data(data: dict, **kwargs):
     """
     Extract and process data from automatic emittance measurement results.
     """
     resolution = data["resolution"]
-    images = data["images"]
+    # images = data["images"]
     raw_images = data["raw_images"]
     design_twiss = data["design_twiss"]
 
@@ -132,23 +124,14 @@ def process_automatic_emittance_measurement_data(
         f"{np.count_nonzero(snr_condition)} / {len(snr_condition)} images satisfied the signal to noise limit of {min_signal_to_noise_ratio}"
     )
 
-    images = images[snr_condition]
+    raw_images = raw_images[snr_condition]
     quad_strengths = data["quad_strengths"][snr_condition]
     rmat = data["rmat"][snr_condition]
     quad_pv_values = data["quad_pv_values"][snr_condition]
     energy = data["energy"]
 
     # process images by centering, cropping, and normalizing
-    results = process_images(
-        images,
-        resolution,
-        crop=True,
-        center=True,
-        n_stds=n_stds,
-        max_pixels=max_pixels,
-        threshold_multiplier=threshold_multiplier,  # multiply threshold factor to remove speckles
-        median_filter_size=median_filter_size,
-    )
+    results = process_images(raw_images, resolution, crop=True, center=True, **kwargs)
     resolution = results["pixel_size"]
 
     print(f"Final image shape {results['images'].shape}")
