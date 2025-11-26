@@ -46,25 +46,41 @@ class MLQuadScanEmittance(QuadScanEmittance):
     and measure the beam size at different quadrupole settings. It uses the
     Xopt library to perform the optimization.
 
-    Attributes:
-        scan_values (list[float]): List of quadrupole strengths used in the scan.
-        n_initial_points (PositiveInt): Number of initial points for the optimization.
-        n_iterations (PositiveInt): Number of iterations for the optimization.
-        max_scan_range (Optional[list[float]]): Maximum scan range for the quadrupole strength.
-        X (Optional[Xopt]): Xopt object for Bayesian optimization.
-        min_signal_to_noise_ratio (float): Minimum signal-to-noise ratio for valid measurements.
-        n_interpolate_points (Optional[PositiveInt]): Number of interpolation measurements made in-between BO-chosen points.
-        n_grid_points (PositiveInt): Number of grid points for the numerical optimizer.
-        min_beamsize_cutoff (float): Minimum beam size cutoff in microns.
-        beamsize_cutoff_max (float): Maximum beam size cutoff as a multiple of the minimum beam size measured.
-        beta (float): Exploration parameter for the Bayesian optimization.
-        visualize_bo (bool): Whether to visualize the Bayesian optimization process.
-        visualize_cropping (bool): Whether to visualize the cropping of the scan.
-        verbose (bool): Whether to print verbose output during the measurement.
-
-        evaluate_callback (Optional[callable]): Optional callback function to evaluate additional metrics at each quad strength during the scan.
-            Should be in the form of `evaluate_callback(inputs: dict, fit_result: ImageProjectionFitResult) -> dict`.
-            Additional results will be added to the `X.data` attribute.
+    Attributes
+    ----------
+    scan_values : list[float]
+        List of quadrupole strengths used in the scan.
+    n_initial_points : PositiveInt
+        Number of initial points for the optimization.
+    n_iterations : PositiveInt
+        Number of iterations for the optimization.
+    max_scan_range : Optional[list[float]]
+        Maximum scan range for the quadrupole strength.
+    X : Optional[Xopt]
+        Xopt object for Bayesian optimization.
+    min_signal_to_noise_ratio : float
+        Minimum signal-to-noise ratio for valid measurements.
+    n_interpolate_points : Optional[PositiveInt]
+        Number of interpolation measurements made in-between BO-chosen points.
+    n_grid_points : PositiveInt
+        Number of grid points for the numerical optimizer.
+    min_beamsize_cutoff : float
+        Minimum beam size cutoff in microns.
+    beamsize_cutoff_max : float
+        Maximum beam size cutoff as a multiple of the minimum beam size measured.
+    beta : float
+        Exploration parameter for the Bayesian optimization.
+    visualize_bo : bool
+        Whether to visualize the Bayesian optimization process.
+    visualize_cropping : bool
+        Whether to visualize the cropping of the scan.
+    verbose : bool
+        Whether to print verbose output during the measurement.
+    evaluate_callback : Optional[callable]
+        Optional callback function to evaluate additional metrics at each quad 
+        strength during the scan. Should be in the form of 
+        `evaluate_callback(inputs: dict, fit_result: ImageProjectionFitResult) -> dict`.
+        Additional results will be added to the `X.data` attribute.
 
     """
 
