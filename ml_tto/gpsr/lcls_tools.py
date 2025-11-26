@@ -30,6 +30,7 @@ def get_lcls_tools_data_from_file(fname: str):
 
 def get_lcls_tools_data(
     info: dict,
+    get_all_data: bool = False,
 ):
     metadata = info["metadata"]
     energy = metadata["energy"]
@@ -41,27 +42,31 @@ def get_lcls_tools_data(
     ]
     l_eff = metadata["magnet"]["metadata"]["l_eff"]
 
-    # depending on the context `info["quadrupole_pv_values"]` could be a list or a dict
-    if isinstance(info["quadrupole_pv_values"], dict):
-        quad_pv_values = np.unique(
-            np.array(
-                [
-                    ele
-                    for ele in list(info["quadrupole_pv_values"]["0"])
-                    + list(info["quadrupole_pv_values"]["1"])
-                ]
+    if get_all_data:
+        # get raw pv values from xopt object
+        quad_pv_values = np.array(metadata["scan_values"])
+    else:
+        # depending on the context `info["quadrupole_pv_values"]` could be a list or a dict
+        if isinstance(info["quadrupole_pv_values"], dict):
+            quad_pv_values = np.unique(
+                np.array(
+                    [
+                        ele
+                        for ele in list(info["quadrupole_pv_values"]["0"])
+                        + list(info["quadrupole_pv_values"]["1"])
+                    ]
+                )
             )
-        )
-    elif isinstance(info["quadrupole_pv_values"], list):
-        quad_pv_values = np.unique(
-            np.array(
-                [
-                    ele
-                    for ele in list(info["quadrupole_pv_values"][0])
-                    + list(info["quadrupole_pv_values"][1])
-                ]
+        elif isinstance(info["quadrupole_pv_values"], list):
+            quad_pv_values = np.unique(
+                np.array(
+                    [
+                        ele
+                        for ele in list(info["quadrupole_pv_values"][0])
+                        + list(info["quadrupole_pv_values"][1])
+                    ]
+                )
             )
-        )
 
     quad_focusing_strengths = bdes_to_kmod(
         e_tot=energy, effective_length=l_eff, bdes=quad_pv_values
