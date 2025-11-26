@@ -1,22 +1,17 @@
-import sys
 import os
-from ml_tto.gpsr.lcls_tools import (
-    get_lcls_tools_data,
-    process_automatic_emittance_measurement_data,
-)
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from lcls_tools.common.image.processing import process_images
+from gpsr.datasets import ObservableDataset
+from lcls_tools.common.data.saver import H5Saver
 from lcls_tools.common.image.fit import ImageProjectionFit
-import os
 from pydantic import ValidationError
 
-from lcls_tools.common.data.saver import H5Saver
-from ml_tto.gpsr.utils import image_snr
-from gpsr.data_processing import process_images
-import torch
-from gpsr.datasets import ObservableDataset
-from ml_tto.gpsr.utils import image_snr
-import numpy as np
-import matplotlib.pyplot as plt
+from ml_tto.gpsr.lcls_tools import (
+    get_lcls_tools_data,
+)
 
 
 def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
@@ -34,9 +29,12 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
 
     x_min = x[np.nanargmin(y)]
 
+    # get x values that dont have corresponding y-nans
+    x_no_nans = x[~np.isnan(y)]
+
     # Determine x boundaries
-    x_min_val = np.min(x)
-    x_max_val = np.max(x)
+    x_min_val = np.min(x_no_nans)
+    x_max_val = np.max(x_no_nans)
 
     # Generate evenly spaced target x values on each side
     left_targets = np.linspace(
@@ -55,8 +53,7 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
 
     for t in targets:
         # only select x's which have non nan y's
-        x_no_nans = x[~np.isnan(y)]
-        idx = np.abs(x_no_nans - t).argmin()
+        idx = np.abs(x - t).argmin()
 
         # Ensure unique selections
         if idx not in used_indices:
@@ -66,6 +63,7 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
 
     # if there are not enough points return all
     if len(x_selected) < num_points_each_side:
+        print("not enough points, returning all")
         return x[~np.isnan(y)], y[~np.isnan(y)], np.arange(len(x))[~np.isnan(y)]
 
     # Sort by x for clarity
@@ -73,7 +71,13 @@ def extract_nearest_to_evenly_spaced_x(x, y, num_points_each_side):
     x_selected = np.array(x_selected)[sorted_idx]
     y_selected = np.array(y_selected)[sorted_idx]
 
-    indicies = np.array([np.where(x == ele)[0] for ele in x_selected])
+    indicies = []
+    for ele in x_selected:
+        _idx = np.where(x == ele)[0]
+        if _idx.shape[0] > 0:
+            _idx = _idx[0]
+        indicies.append(_idx)
+    indicies = np.array(indicies)
 
     return x_selected, y_selected, indicies
 
@@ -91,7 +95,7 @@ model_pvs = [
 ] + ["TCAV:DIAG0:11:AREQ"]
 
 
-def process_data_2(
+def process_data(
     fname,
     dump_location,
     images_per_scan=5,
@@ -115,13 +119,14 @@ def process_data_2(
         image_data = []
         pv_data = []
         for tcav_state in ["off", "on"]:
+            print(f"{screen}_{tcav_state}")
             data = all_data[f"{screen}_{tcav_state}"]
             beam_energy = float(
                 data["environment_variables"]["BEND:DIAG0:510:BCTRL"]
             )  # in GeV/c
 
             # get formatted data
-            formatted_data = get_lcls_tools_data(data)
+            formatted_data = get_lcls_tools_data(data, True)
             quad_values = formatted_data["quad_pv_values"]
 
             # sort images and pv_values, smooth images for fitting
@@ -134,6 +139,8 @@ def process_data_2(
                 "background_image"
             ]
             images = np.clip(images - background.T, 0, None)
+            intensities = np.sum(images, axis=(-2, -1))
+            intensities = intensities / np.max(intensities)
 
             # if OTRDG02, flip LR
             if screen == "OTRDG02":
@@ -141,8 +148,8 @@ def process_data_2(
 
             # fit smoothed images
             smoothed_images = process_images(
-                images, 1, median_filter_size=3, center=True, crop=True
-            )["images"]
+                images, median_filter_size=5, center=True, crop=True
+            )[0]
             rms_sizes = []
             for ele in smoothed_images:
                 try:
@@ -151,24 +158,30 @@ def process_data_2(
                     rms_sizes.append(np.ones(2) * np.nan)
             rms_sizes = np.array(rms_sizes).T
 
+            # for images with low intensity, set rms_sizes to nan
+            intensity_mask = intensities > 0.65
+            rms_sizes[:, ~intensity_mask] = np.nan
+
             if visualize:
                 fig, ax = plt.subplots()
                 for i in range(2):
                     ax.plot(quad_values, rms_sizes[i], ".")
+                axb = ax.twinx()
+                axb.plot(quad_values, intensities, "C3+")
 
             # select a subset of images
             _, _, indicies_x = extract_nearest_to_evenly_spaced_x(
-                quad_values, rms_sizes[0], 5
+                quad_values, rms_sizes[0], 7
             )
             _, _, indicies_y = extract_nearest_to_evenly_spaced_x(
-                quad_values, rms_sizes[1], 5
+                quad_values, rms_sizes[1], 7
             )
+            indicies_x = indicies_x.flatten()
+            indicies_y = indicies_y.flatten()
+
             selected_quad_pvs = np.sort(
                 np.unique(np.concatenate((indicies_x, indicies_y)))
             )
-
-            # drop the first and last as a heuristic
-            selected_quad_pvs = selected_quad_pvs[1:-1]
 
             # select a subset of images
             B = len(selected_quad_pvs)
@@ -206,14 +219,13 @@ def process_data_2(
 
         processed_images = process_images(
             image_data,
-            pixel_size=1.0,
-            n_stds=7,
+            n_stds=6,
             median_filter_size=3,
             threshold_multiplier=1.0,
             pool_size=pool_sizes[f"{screen.lower()}_pool_size"],
             crop=True,
             center=True,
-        )["images"]
+        )[0]
 
         # transpose images
         processed_images = np.transpose(processed_images, axes=(0, 2, 1))
