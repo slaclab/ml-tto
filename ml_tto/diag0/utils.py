@@ -99,8 +99,6 @@ def process_data(
     fname,
     dump_location,
     images_per_scan=5,
-    min_signal_to_noise_ratio=4,
-    pool_size=3,
     visualize=False,
 ):
     saver = H5Saver()
