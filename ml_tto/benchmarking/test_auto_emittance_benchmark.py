@@ -1,15 +1,12 @@
-from unittest.mock import patch, MagicMock
-import pytest
-import numpy as np
-import torch
-from cheetah import Segment, Quadrupole, Drift, ParameterBeam
+from unittest.mock import MagicMock
 
+import numpy as np
+import pytest
+import torch
+from cheetah import Drift, ParameterBeam, Quadrupole, Segment
 from lcls_tools.common.devices.magnet import Magnet, MagnetMetadata
-from lcls_tools.common.devices.reader import create_magnet
 from lcls_tools.common.devices.screen import Screen
-from lcls_tools.common.frontend.plotting.emittance import plot_quad_scan_result
 from lcls_tools.common.image.roi import CircularROI
-from lcls_tools.common.image.processing import ImageProcessor
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
@@ -43,13 +40,15 @@ class MockBeamline:
         self.roi = CircularROI(center=[1, 1], radius=1000)
         self.screen_resolution = 1.0  # resolution of the screen in um / px
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
-        self.beamsize_measurement.device = MagicMock(spec=Screen)
-        self.beamsize_measurement.device.resolution = self.screen_resolution
+        self.beamsize_measurement.beam_profile_device = MagicMock(spec=Screen)
+        self.beamsize_measurement.beam_profile_device.resolution = self.screen_resolution
         self.beamsize_measurement.image_processor = MagicMock()
         self.beamsize_measurement.image_processor.roi = self.roi
         self.beamsize_measurement.measure = MagicMock(
             side_effect=self.get_beamsize_measurement
         )
+        self.beamsize_measurement.beam_fit = MagicMock()
+        self.beamsize_measurement.beam_fit.signal_to_noise_ratio = 1.0
 
         self.initial_beam = initial_beam
 
@@ -70,23 +69,23 @@ class MockBeamline:
 
         sigma_x = (
             outgoing_beam.sigma_x * 1e6 / self.screen_resolution
-            + 5.0 * np.random.randn(args[0])
+            + 5.0 * np.random.randn(1)
         )
         sigma_y = (
             outgoing_beam.sigma_y * 1e6 / self.screen_resolution
-            + 5.0 * np.random.randn(args[0])
+            + 5.0 * np.random.randn(1)
         )
 
         result = MagicMock(ScreenBeamProfileMeasurementResult)
-        result.rms_sizes = np.stack([sigma_x, sigma_y]).T
-        result.centroids = self.roi.radius[0] * np.ones((args[0], 2))
+        result.rms_sizes_all = np.stack([sigma_x, sigma_y]).T
+        result.centroids = self.roi.radius[0] * np.ones((1, 2))
         result.signal_to_noise_ratios = np.ones(2) * 10.0
 
         # simulate the beam losing intensity on the edges
         intensity = 10 ** (6.0 - 0.5 * np.abs(self.beamline.Q0.k1.numpy()))
         # intensity = 1e6
 
-        result.total_intensities = np.ones(args[0]) * intensity
+        result.total_intensities = np.ones(1) * intensity
         result.metadata = MagicMock()
         result.metadata.image_processor = MagicMock()
         result.metadata.image_processor.roi = self.roi
@@ -113,9 +112,8 @@ def run_calc():
         energy=1e9 * 299.792458 / 1e3,
         magnet=mock_beamline.magnet,
         beamsize_measurement=mock_beamline.beamsize_measurement,
-        n_measurement_shots=3,
         rmat=rmat,
-        n_initial_samples=3,
+        n_initial_points=3,
         n_iterations=8,
         max_scan_range=[-10, 10],
     )

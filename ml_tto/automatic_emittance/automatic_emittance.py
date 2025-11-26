@@ -379,6 +379,7 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
         try:
             processed_data = process_automatic_emittance_measurement_data(
                 get_lcls_tools_data(initial_result.model_dump()),
+                min_signal_to_noise_ratio=self.image_min_signal_to_noise_ratio,
                 n_stds=self.n_stds,
                 max_pixels=self.max_pixels,
                 median_filter_size=self.median_filter_size,

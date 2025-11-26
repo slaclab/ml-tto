@@ -3,9 +3,7 @@ import torch
 import numpy as np
 from lcls_tools.common.data.model_general_calcs import bdes_to_kmod, build_quad_rmat
 from gpsr.data_processing import process_images
-from lcls_tools.common.measurements.emittance_measurement import (
-    EmittanceMeasurementResult,
-)
+
 from ml_tto.gpsr.utils import image_snr
 
 
@@ -112,7 +110,11 @@ def get_lcls_tools_data(
     }
 
 
-def process_automatic_emittance_measurement_data(data: dict, **kwargs):
+def process_automatic_emittance_measurement_data(
+        data: dict, 
+        min_signal_to_noise_ratio: float = 5.0,
+        **kwargs
+    ) -> dict:
     """
     Extract and process data from automatic emittance measurement results.
     """
