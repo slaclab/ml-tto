@@ -76,6 +76,7 @@ def run_auto_focusing(
     X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator)
 
     try:
+        # evaluate the current point
         X.evaluate_data(env.get_variables(vocs.variables.keys()))
         if X.vocs.select_best(X.data)[1] < target_value:
             logger.info(f"converged with value {X.vocs.select_best(X.data)[1]}")
