@@ -1,17 +1,15 @@
 import logging
-
-logger = logging.getLogger("auto_focusing")
-
-import numpy as np
-from xopt import Xopt, Evaluator, VOCS
-from xopt.generators.bayesian import (
-    ExpectedImprovementGenerator,
-    UpperConfidenceBoundGenerator,
-)
-from xopt.utils import get_local_region
-from botorch.exceptions.errors import OptimizationGradientError
 import traceback
 
+import numpy as np
+from botorch.exceptions.errors import OptimizationGradientError
+from xopt import VOCS, Evaluator, Xopt
+from xopt.generators.bayesian import (
+    ExpectedImprovementGenerator,
+)
+from xopt.utils import get_local_region
+
+logger = logging.getLogger("auto_focusing")
 
 def run_auto_focusing(
     env,
