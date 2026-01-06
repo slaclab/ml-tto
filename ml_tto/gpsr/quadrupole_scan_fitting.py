@@ -228,7 +228,7 @@ def gpsr_fit_quad_scan(
     # create cheetah screen diagnostic
     screen = Screen(
         name="screen",
-        resolution=images.shape[1:],
+        resolution=images.shape[1:][::-1],    # image shape is in (y, x) order, but cheetah expects (x, y)
         pixel_size=torch.ones(2) * resolution,
         method="kde",
         kde_bandwidth=torch.tensor(resolution, dtype=torch.float32) / 2.0,
