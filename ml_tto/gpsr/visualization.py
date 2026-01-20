@@ -6,6 +6,7 @@ import tempfile
 
 import lightning as L
 import matplotlib.pyplot as plt
+from ml_tto.gpsr.utils import MetricTracker
 import torch
 from gpsr.datasets import QuadScanDataset
 from gpsr.train import LitGPSR
@@ -216,6 +217,9 @@ def animate_gpsr_file(
         filename="model-{epoch:03d}",
     )
 
+    # track training loss
+    metric_cb = MetricTracker()
+
     # fit beam distribution
     results = gpsr_fit_file(
         fname=fname,
@@ -225,7 +229,7 @@ def animate_gpsr_file(
         max_pixels=max_pixels,
         n_stds=n_stds,
         threshold_multiplier=threshold_multiplier,
-        callbacks=[checkpoint_cb],
+        callbacks=[checkpoint_cb, metric_cb],
         n_epochs=n_epochs,
         **kwargs,
     )
@@ -268,9 +272,17 @@ def animate_gpsr_file(
         litgpsr.load_state_dict(checkpoint["state_dict"])
         litgpsr.to("cuda")
 
-        # generate distribution plot
+        # generate distribution plot with loss inset
         reconstructed_beam = litgpsr.gpsr_model.beam_generator()
         fig1, _ = reconstructed_beam.plot_distribution(dimensions=dimensions, bin_ranges=bin_ranges)
+        loss_ax = fig1.add_subplot(2, 2, 2)
+        loss_ax.semilogy(metric_cb.training_loss)
+        loss_ax.plot(epoch, metric_cb.training_loss[epoch], color='red', marker='o')
+        loss_ax.set_xticks([])
+        loss_ax.set_yticks([])
+        loss_ax.set_yticks([], minor=True)
+        loss_ax.set_xlabel('epoch')
+        loss_ax.set_ylabel('log loss')
         img1 = fig_to_png(fig1)
         plt.close(fig1)
 
@@ -282,7 +294,7 @@ def animate_gpsr_file(
         plt.close(fig2)
 
         # place plots side by side
-        title = f"Reconstructed distribution and predicted measurements (epoch {epoch + 1})"
+        title = f"Reconstructed distribution and predicted measurements (epoch {epoch})"
         combined = combine_images_with_title(img1, img2, title)
         gif_frames.append(combined)
 
