@@ -185,7 +185,7 @@ class RMatLattice(GPSRLattice):
         beam.particle_charges = torch.ones_like(beam.x).to(device=beam.x.device)
         self.lattice.track(beam)
 
-        observations = self.lattice.elements[-1].reading.transpose(-1, -2)
+        observations = self.lattice.elements[-1].reading
 
         # clip observations
         if self.fit_threshold:
