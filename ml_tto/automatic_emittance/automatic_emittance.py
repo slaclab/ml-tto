@@ -167,8 +167,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
                     f"{self.transmission_measurement_constraint}"
                 )
                 results = {
-                    "x_rms_px_sq": np.array([np.nan]),
-                    "y_rms_px_sq": np.array([np.nan]),
+                    "x_rms_micron_sq": np.array([np.nan]),
+                    "y_rms_micron_sq": np.array([np.nan]),
                     "min_signal_to_noise_ratio": np.nan,
                     "transmission": transmission,
                 }
@@ -206,8 +206,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
         rms_y = fit_result.rms_sizes_all[:, 1]
 
         results = {
-            "x_rms_px_sq": rms_x**2,
-            "y_rms_px_sq": rms_y**2,
+            "x_rms_micron_sq": rms_x**2,
+            "y_rms_micron_sq": rms_y**2,
             "min_signal_to_noise_ratio": np.min(fit_result.signal_to_noise_ratios),
         }
         results.update(extra_measurements)
@@ -226,7 +226,6 @@ class MLQuadScanEmittance(QuadScanEmittance):
         self.X = Xopt(vocs=vocs, evaluator=evaluator, generator=generator)
 
     def update_xopt_object(self, vocs):
-        self.X.vocs = vocs
         self.X.generator.vocs = vocs
 
     def reset(self):
@@ -331,11 +330,11 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         """
 
-        scan_name = f"{dim_name}_rms_px_sq"
+        scan_name = f"{dim_name}_rms_micron_sq"
         vocs = VOCS(
             variables={"k": self.max_scan_range},
             objectives={scan_name: "MINIMIZE"},
-            observables=["x_rms_px_sq", "y_rms_px_sq"],
+            observables=["x_rms_micron_sq", "y_rms_micron_sq"],
         )
 
         if self.X is not None:
@@ -363,13 +362,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
         """
         return the cutoff beam size for the given dimension, returned in pixel scale
         """
-        param_name = f"{dim_name}_rms_px_sq"
+        param_name = f"{dim_name}_rms_micron_sq"
         min_size = np.nanmin(self.X.data[param_name].to_numpy(dtype="float"))
         return np.max(
             (
                 self.beamsize_cutoff_max * np.sqrt(min_size),
-                self.min_beamsize_cutoff
-                / self.beamsize_measurement.beam_profile_device.resolution,
+                self.min_beamsize_cutoff,
             )
         )
 
