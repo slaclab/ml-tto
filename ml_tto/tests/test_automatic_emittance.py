@@ -44,7 +44,7 @@ class MockBeamline:
         )
         self.magnet.name = "Q0"
 
-        self.screen_resolution = 1.0  # resolution of the screen in um / px
+        self.screen_resolution = 10.0  # resolution of the screen in um / px
         self.beamsize_measurement = MagicMock(spec=ScreenBeamProfileMeasurement)
         self.beamsize_measurement.beam_profile_device = MagicMock(spec=Screen)
         self.beamsize_measurement.beam_profile_device.name = "TestScreen"
@@ -71,16 +71,14 @@ class MockBeamline:
 
     def get_beamsize_measurement(self, *args):
         """define a mock beamsize measurement for the
-        ScreenBeamProfileMeasurement -- returns image fit result in pixels"""
+        ScreenBeamProfileMeasurement -- returns image fit result in microns"""
         outgoing_beam = self.beamline.track(self.initial_beam)
 
         sigma_x = (
-            outgoing_beam.sigma_x * 1e6 / self.screen_resolution
-            + 5.0 * np.random.randn(1)
+            outgoing_beam.sigma_x * 1e6 + 5.0 * np.random.randn(1) * self.screen_resolution
         )
         sigma_y = (
-            outgoing_beam.sigma_y * 1e6 / self.screen_resolution
-            + 5.0 * np.random.randn(1)
+            outgoing_beam.sigma_y * 1e6 + 5.0 * np.random.randn(1) * self.screen_resolution
         )
 
         result = MagicMock(ScreenBeamProfileMeasurementResult)
@@ -202,7 +200,7 @@ class TestAutomaticEmittance:
             return image
 
         type(screen).image = property(mock_get_image)
-        screen.resolution = 1.0
+        screen.resolution = 10.0
 
         image_processor = ImageProcessor()
         screen_measurement = ScreenBeamProfileMeasurement(
@@ -276,7 +274,7 @@ class TestAutomaticEmittance:
             return image
 
         type(screen).image = property(mock_get_image)
-        screen.resolution = 1.0
+        screen.resolution = 10.0
 
         image_processor = ImageProcessor()
         screen_measurement = ScreenBeamProfileMeasurement(
@@ -293,8 +291,8 @@ class TestAutomaticEmittance:
             # For demonstration, we return the k value and the beam size
             return {
                 "my_callback_k": inputs["k"],
-                "my_callback_x_rms_px": fit_result.rms_sizes_all[0, 0],
-                "my_callback_y_rms_px": fit_result.rms_sizes_all[0, 1],
+                "my_callback_x_rms_micron": fit_result.rms_sizes_all[0, 0],
+                "my_callback_y_rms_micron": fit_result.rms_sizes_all[0, 1],
             }
 
         # Instantiate the QuadScanEmittance object
@@ -315,8 +313,8 @@ class TestAutomaticEmittance:
 
         # make sure that the callback is called
         assert "my_callback_k" in quad_scan.X.data.columns
-        assert "my_callback_x_rms_px" in quad_scan.X.data.columns
-        assert "my_callback_y_rms_px" in quad_scan.X.data.columns
+        assert "my_callback_x_rms_micron" in quad_scan.X.data.columns
+        assert "my_callback_y_rms_micron" in quad_scan.X.data.columns
 
     def test_transmission(self):
         initial_beam = ParameterBeam.from_twiss(
@@ -355,7 +353,7 @@ class TestAutomaticEmittance:
             return image
 
         type(screen).image = property(mock_get_image)
-        screen.resolution = 1.0
+        screen.resolution = 10.0
 
         image_processor = ImageProcessor()
         screen_measurement = ScreenBeamProfileMeasurement(
