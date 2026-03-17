@@ -24,7 +24,7 @@ dependencies = [
     "h5py",
     "scikit-learn",
     "tenacity",
-    "xopt >= 2.6.6",
+    "xopt >= 3.0.0",
     "cheetah-accelerator",
     "scikit-image",
     "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git",
