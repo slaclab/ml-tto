@@ -74,11 +74,12 @@ class MockBeamline:
         ScreenBeamProfileMeasurement -- returns image fit result in microns"""
         outgoing_beam = self.beamline.track(self.initial_beam)
 
+        # return beam sizes in microns
         sigma_x = (
-            outgoing_beam.sigma_x * 1e6 + 5.0 * np.random.randn(1) * self.screen_resolution
+            outgoing_beam.sigma_x * 1e6 + 5.0 * np.random.randn(1)
         )
         sigma_y = (
-            outgoing_beam.sigma_y * 1e6 + 5.0 * np.random.randn(1) * self.screen_resolution
+            outgoing_beam.sigma_y * 1e6 + 5.0 * np.random.randn(1)
         )
 
         result = MagicMock(ScreenBeamProfileMeasurementResult)
