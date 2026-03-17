@@ -37,7 +37,7 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
         - alpha_x: Alpha function along x
         - alpha_y: Alpha function along y
         - screen_distribution: The distribution of the beam at the screen for each quadrupole focusing strength
-        - twiss_at_screen: The Twiss parameters at the screen for each quadrupole focusing strength
+        - twiss: The Twiss parameters at the screen for each quadrupole focusing strength
         - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
         - sigma_matrix: The covariance matrix of the reconstructed beam
         - bmag: The bmag matching parameter for each quadrupole focusing strength
@@ -50,7 +50,7 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
     final_beam = gpsr_model.lattice.lattice.track(reconstructed_beam)
 
     # compute the twiss functions
-    twiss_at_screen = [
+    twiss = [
         torch.stack(
             (
                 final_beam.beta_x,
@@ -117,7 +117,7 @@ def get_beam_stats(reconstructed_beam, gpsr_model, design_twiss=None):
         "alpha_x": float(reconstructed_beam.alpha_x.detach()),
         "alpha_y": float(reconstructed_beam.alpha_y.detach()),
         "screen_distribution": final_beam,
-        "twiss_at_screen": twiss_at_screen,
+        "twiss": twiss,
         "rms_beamsizes": rms_sizes,
         "beam_matrix": beam_matrix,
         "halo_x": compute_halo_metric(reconstructed_beam, slice(None, 2)),

@@ -270,7 +270,7 @@ def compute_emit_bmag_machine_units(
     # Prepare outputs
     results = {
         "emittance": [],
-        "twiss_at_screen": [],
+        "twiss": [],
         "beam_matrix": [],
         "bmag": [] if twiss_design is not None else None,
         "quadrupole_focusing_strengths": [],

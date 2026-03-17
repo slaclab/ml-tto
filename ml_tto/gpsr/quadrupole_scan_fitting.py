@@ -213,7 +213,7 @@ def gpsr_fit_quad_scan(
         - alpha_y: Alpha function along y
         - screen_distribution: The distribution of the beam at the screen for each
             quadrupole focusing strength
-        - twiss_at_screen: The Twiss parameters at the screen for each quadrupole focusing strength
+        - twiss: The Twiss parameters at the screen for each quadrupole focusing strength
         - rms_sizes: The RMS sizes of the beam at the screen for each quadrupole focusing strength
         - sigma_matrix: The covariance matrix of the reconstructed beam
         - bmag: The bmag matching parameter for each quadrupole focusing strength
@@ -228,7 +228,9 @@ def gpsr_fit_quad_scan(
     # create cheetah screen diagnostic
     screen = Screen(
         name="screen",
-        resolution=images.shape[1:][::-1],    # image shape is in (y, x) order, but cheetah expects (x, y)
+        resolution=images.shape[1:][
+            ::-1
+        ],  # image shape is in (y, x) order, but cheetah expects (x, y)
         pixel_size=torch.ones(2) * resolution,
         method="kde",
         kde_bandwidth=torch.tensor(resolution, dtype=torch.float32) / 2.0,

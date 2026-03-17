@@ -13,7 +13,7 @@ from ml_tto.gpsr.lcls_tools import (
     process_automatic_emittance_measurement_data,
 )
 from lcls_tools.common.measurements.emittance_measurement import (
-    EmittanceMeasurementResult,
+    QuadScanEmittanceResult,
 )
 
 
@@ -58,16 +58,19 @@ class TestGPSRLCLSTools:
         obj = hdf5_group_to_dict(self.hdf5_file)
         obj.pop("environment_variables")
 
+        # replace key
+        obj["twiss"] = obj.pop("twiss_at_screen")
+
         for key in [
             "quadrupole_focusing_strengths",
             "quadrupole_pv_values",
             "bmag",
-            "twiss_at_screen",
+            "twiss",
             "rms_beamsizes",
         ]:
             obj[key] = [values for _, values in obj[key].items()]
 
-        result = EmittanceMeasurementResult(**obj)
+        result = QuadScanEmittanceResult(**obj)
 
         output = process_automatic_emittance_measurement_data(
             get_lcls_tools_data(result.model_dump()),

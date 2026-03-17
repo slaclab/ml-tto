@@ -21,7 +21,7 @@ from tenacity import (
 
 from lcls_tools.common.measurements.emittance_measurement import (
     QuadScanEmittance,
-    EmittanceMeasurementResult,
+    QuadScanEmittanceResult,
 )
 from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
@@ -77,8 +77,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
     verbose : bool
         Whether to print verbose output during the measurement.
     evaluate_callback : Optional[callable]
-        Optional callback function to evaluate additional metrics at each quad 
-        strength during the scan. Should be in the form of 
+        Optional callback function to evaluate additional metrics at each quad
+        strength during the scan. Should be in the form of
         `evaluate_callback(inputs: dict, fit_result: ImageProjectionFitResult) -> dict`.
         Additional results will be added to the `X.data` attribute.
 
@@ -421,12 +421,12 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
                     gpsr_result["emittance_y"],
                 ]
             ).reshape(2, 1)
-            formatted_result = EmittanceMeasurementResult(
+            formatted_result = QuadScanEmittanceResult(
                 quadrupole_focusing_strengths=[processed_data["quad_strengths"]] * 2,
                 quadrupole_pv_values=[processed_data["quad_pv_values"]] * 2,
                 emittance=emittance,
                 bmag=gpsr_result["bmag"],
-                twiss_at_screen=gpsr_result["twiss_at_screen"],
+                twiss=gpsr_result["twiss"],
                 rms_beamsizes=gpsr_result["rms_beamsizes"],
                 beam_matrix=gpsr_result["beam_matrix"],
                 metadata=initial_result.metadata,
