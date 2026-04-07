@@ -55,3 +55,7 @@ include = ["ml_tto*"]
 
 [project.license]
 file = "LICENSE"
+
+[tool.setuptools_scm]
+version_file = "ml_tto/_version.py"
+fallback_version = "0.0.0"
