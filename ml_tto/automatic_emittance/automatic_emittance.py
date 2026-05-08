@@ -150,11 +150,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # start by waiting one refresh cycle for bctrl
         # then wait for bact to match bctrl
         # bctrl refresh rate is less than 10 ms
+        start_time = time.time()
         time.sleep(self.bctrl_refresh_rate)
-        while abs(self.magnet.bctrl - self.magnet.bact) > 0.01:
+        while not np.isclose(self.magnet.bact, inputs["k"], atol=0.01):
             time.sleep(self.bctrl_refresh_rate)
 
-        logger.debug(f"Quadrupole strength bact is {self.magnet.bact}")
+        logger.debug(
+            f"Quadrupole strength bact is {self.magnet.bact:.4f}, took {time.time() - start_time:.2f} seconds to update"
+        )
 
         # if provided, check transmission
         if self.transmission_measurement is not None:
@@ -178,10 +181,9 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
         # do the measurement of the beam size and callbacks
         logger.debug("trying beamsize measurement")
-        try:
-            self.measure_beamsize()
-        except ValueError:
-            raise BackgroundMismatchError()
+
+        self.measure_beamsize()
+
         fit_result = self._info[-1]
         self.scan_values.append(inputs["k"])
 
