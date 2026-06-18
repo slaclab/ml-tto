@@ -151,9 +151,12 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # then wait for bact to match bctrl
         # bctrl refresh rate is less than 10 ms
         start_time = time.time()
-        time.sleep(self.bctrl_refresh_rate)
+        time.sleep(1.0)  # self.bctrl_refresh_rate)
         while not np.isclose(self.magnet.bact, inputs["k"], atol=0.01):
             time.sleep(self.bctrl_refresh_rate)
+            logger.debug(
+                f"Waiting for quadrupole strength to update... set val: {inputs['k']}, bact: {self.magnet.bact}"
+            )
 
         logger.debug(
             f"Quadrupole strength bact is {self.magnet.bact:.4f}, took {time.time() - start_time:.2f} seconds to update"

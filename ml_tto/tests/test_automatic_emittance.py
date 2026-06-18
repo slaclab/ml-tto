@@ -33,6 +33,9 @@ class MockBeamline:
             ]
         )
 
+        # set random seed for reproducibility of the mock beamsize measurements
+        np.random.seed(0)
+
         self.magnet = MagicMock(spec=Magnet)
 
         # add a property to the magnet to control the quad strength
