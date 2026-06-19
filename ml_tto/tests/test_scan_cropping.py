@@ -1,8 +1,56 @@
+import torch
+
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
+from ml_tto.automatic_emittance.scan_cropping import crop_scan_by_concavity
+
 import numpy as np
 
 
 class TestScanCropping:
+    def test_cropping_return_details(self):
+        x = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+        y = np.array([3.0e-4, 2.0e-4, 1.0e-4, 2.0e-4, 3.0e-4])
+
+        (
+            x_cropped,
+            y_cropped,
+            concavity_mask,
+            cutoff_mask,
+            model,
+        ) = crop_scan(x, y, cutoff_max=1.0e-3)
+
+        assert x_cropped.shape == x.shape
+        assert y_cropped.shape == y.shape
+        assert concavity_mask.shape == y.shape
+        assert cutoff_mask.shape == y.shape
+        assert concavity_mask.dtype == bool
+        assert cutoff_mask.dtype == bool
+        assert model is not None
+
+    def test_cropping_by_concavity_returns_masks_and_model(self):
+
+        x = np.array([-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0])
+        y = np.array([4.0e-4, 3.0e-4, 2.0e-4, 1.0e-4, 2.0e-4, 3.0e-4, 2.0e-4])
+
+        y_cropped, concave_up, concavity_values, model = crop_scan_by_concavity(x, y)
+
+        # validate that the posterior mean GP aggrees with the square of the original data at the observed points
+        assert np.allclose(
+            model.posterior(torch.tensor(x.reshape(-1, 1), dtype=torch.float32)).mean.detach().numpy().flatten(),
+            y**2,
+            rtol=1.0e-5,
+        )
+
+        # check the returned values
+        assert np.isnan(y_cropped[0])  # the first point should be cropped
+        assert np.isnan(y_cropped[-2])  # the last point should be cropped
+
+        # assert that the concavity mask correctly identifies the first and last points as not concave up
+        assert concave_up[0] == False
+        assert concave_up[-1] == False
+        assert np.all(concave_up[1:-1])  # all but the first and last points should be concave up
+
+
     def test_cropping_without_cutoff_max(self):
         x = np.array(
             [
@@ -47,7 +95,7 @@ class TestScanCropping:
             ]
         )
 
-        x_cropped, y_cropped = crop_scan(x, y)
+        x_cropped, y_cropped, _, _, _ = crop_scan(x, y)
 
         assert np.allclose(
             x_cropped,
@@ -154,7 +202,7 @@ class TestScanCropping:
             ]
         )
 
-        x_cropped, y_cropped = crop_scan(x, y, cutoff_max=10)
+        x_cropped, y_cropped, _, _, _ = crop_scan(x, y, cutoff_max=10)
 
         assert np.allclose(
             x_cropped,
@@ -215,3 +263,5 @@ class TestScanCropping:
             rtol=1.0e-1,
             equal_nan=True,
         )
+
+

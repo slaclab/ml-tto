@@ -152,11 +152,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # bctrl refresh rate is less than 10 ms
         start_time = time.time()
         time.sleep(1.0)  # self.bctrl_refresh_rate)
+        ii = 0
         while not np.isclose(self.magnet.bact, inputs["k"], atol=0.01):
             time.sleep(self.bctrl_refresh_rate)
-            logger.debug(
-                f"Waiting for quadrupole strength to update... set val: {inputs['k']}, bact: {self.magnet.bact}"
-            )
+            ii += 1
+            if ii % 100 == 0: # log every 100 cycles (every 2 seconds if refresh rate is 20 ms)
+                logger.debug(
+                    f"Waiting for quadrupole strength to update... set val: {inputs['k']}, bact: {self.magnet.bact}"
+                )
 
         logger.debug(
             f"Quadrupole strength bact is {self.magnet.bact:.4f}, took {time.time() - start_time:.2f} seconds to update"
@@ -311,11 +314,10 @@ class MLQuadScanEmittance(QuadScanEmittance):
         for i in range(2):
             # crop the scans using concavity filter and max beam size filter
             cutoff_size = self._get_cutoff_beamsize(dim_names[i]) * 1e-6
-            sv_cropped, bs_cropped = crop_scan(
+            sv_cropped, bs_cropped, _, _, _ = crop_scan(
                 scan_values=scan_values[i],
                 beam_sizes=beam_sizes[i],
                 cutoff_max=cutoff_size,
-                visualize=self.visualize_cropping,
             )
             scan_values_cropped += [sv_cropped]
             beam_sizes_cropped += [bs_cropped]

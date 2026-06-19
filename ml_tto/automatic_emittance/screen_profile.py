@@ -22,12 +22,14 @@ logger = logging.getLogger("screen_profile_measurement")
 class RetryScreenBeamProfileMeasurement(ScreenBeamProfileMeasurement):
     def measure(self) -> ScreenBeamProfileMeasurementResult:
         """
-        Modify the base class measurement to retry on NoBeamError
+        Modify the base class measurement to retry on NoBeamError and AttributeError 
+        (which can occur when the image is not properly acquired or processed) up to 
+        3 times before giving up and returning the last measurement result.
         """
         try:
             for attempt in Retrying(
                 stop=stop_after_attempt(3),
-                retry=retry_if_exception_type(NoBeamError),
+                retry=retry_if_exception_type((NoBeamError, AttributeError)),
             ):
                 with attempt:
                     result = super().measure()

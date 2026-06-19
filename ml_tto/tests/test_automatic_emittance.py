@@ -1,4 +1,5 @@
 from unittest.mock import create_autospec, patch, Mock, MagicMock
+import os
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -11,6 +12,9 @@ from lcls_tools.common.devices.screen import Screen
 from lcls_tools.common.image.processing import ImageProcessor
 from lcls_tools.common.devices.bpm import BPM
 from lcls_tools.common.data.saver import H5Saver
+from lcls_tools.common.measurements.emittance_measurement import (
+    QuadScanEmittanceResult,
+)
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
@@ -20,7 +24,15 @@ from lcls_tools.common.measurements.screen_profile import (
     ScreenBeamProfileMeasurementResult,
 )
 from lcls_tools.common.image.fit import ImageProjectionFit
+from ml_tto.automatic_emittance.plotting import plot_emittance_measurement
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
+
+
+TEST_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+PLOT_EMITTANCE_FIXTURE = os.path.join(
+    TEST_FILE_DIR, "fixtures", "test_plot_emittance_measurement_data.npz"
+)
+H5_FIXTURE = os.path.join(TEST_FILE_DIR, "fixtures", "test_emittance_result.h5")
 
 
 class MockBeamline:
@@ -380,3 +392,112 @@ class TestAutomaticEmittance:
         )
 
         quad_scan.measure()
+
+    def test_plot_emittance_measurement_shows_cropped_points(self):
+        assert os.path.exists(PLOT_EMITTANCE_FIXTURE)
+
+        with np.load(PLOT_EMITTANCE_FIXTURE) as fixture_data:
+            scan_values = np.array(fixture_data["k"])
+            emittance_result = {
+                "metadata": {
+                    "beamsize_cutoff_max": float(fixture_data["beamsize_cutoff_max"]),
+                    "min_beamsize_cutoff": float(fixture_data["min_beamsize_cutoff"]),
+                    "X": {
+                        "data": {
+                            "k": scan_values,
+                            "x_rms_micron_sq": np.array(fixture_data["x_rms_micron_sq"]),
+                            "y_rms_micron_sq": np.array(fixture_data["y_rms_micron_sq"]),
+                        }
+                    },
+                }
+            }
+
+        # Inject one large endpoint value so we can deterministically verify cropping.
+        x_sq = np.array(emittance_result["metadata"]["X"]["data"]["x_rms_micron_sq"])
+        y_sq = np.array(emittance_result["metadata"]["X"]["data"]["y_rms_micron_sq"])
+        x_sq[-1] = np.nanmax(x_sq) * 2.0
+        y_sq[-1] = np.nanmax(y_sq) * 2.0
+        emittance_result["metadata"]["X"]["data"]["x_rms_micron_sq"] = x_sq
+        emittance_result["metadata"]["X"]["data"]["y_rms_micron_sq"] = y_sq
+
+        fig, axes = plot_emittance_measurement(emittance_result)
+
+        assert len(axes) == 2
+        total_cropped = 0
+        for ax in axes:
+            collections_by_label = {ele.get_label(): ele for ele in ax.collections}
+
+            assert "raw" in collections_by_label
+            assert "retained" in collections_by_label
+            assert "cropped" in collections_by_label
+
+            raw_count = collections_by_label["raw"].get_offsets().shape[0]
+            retained_count = collections_by_label["retained"].get_offsets().shape[0]
+            cropped_count = collections_by_label["cropped"].get_offsets().shape[0]
+
+            assert raw_count == len(scan_values)
+            assert retained_count + cropped_count <= raw_count
+            total_cropped += cropped_count
+
+            assert any(line.get_label() == "cutoff" for line in ax.lines)
+
+        assert total_cropped >= 1
+
+        plt.close(fig)
+
+    def test_plot_emittance_measurement_from_h5_roundtrip(self, tmp_path):
+        assert os.path.exists(PLOT_EMITTANCE_FIXTURE)
+
+        with np.load(PLOT_EMITTANCE_FIXTURE) as fixture_data:
+            scan_values = np.array(fixture_data["k"], dtype=float)
+            x_rms_micron_sq = np.array(fixture_data["x_rms_micron_sq"], dtype=float)
+            y_rms_micron_sq = np.array(fixture_data["y_rms_micron_sq"], dtype=float)
+
+            result = QuadScanEmittanceResult(
+                emittance=np.array([[1.0e-8], [2.0e-8]]),
+                bmag=np.array([1.0, 1.0]),
+                twiss=np.array([[5.0, -1.0], [6.0, 1.0]]),
+                rms_beamsizes=np.array([
+                    np.sqrt(np.clip(x_rms_micron_sq, a_min=0.0, a_max=None)) * 1e-6,
+                    np.sqrt(np.clip(y_rms_micron_sq, a_min=0.0, a_max=None)) * 1e-6,
+                ]),
+                beam_matrix=np.array([[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]]),
+                quadrupole_focusing_strengths=[scan_values, scan_values],
+                quadrupole_pv_values=[scan_values, scan_values],
+                metadata={
+                    "beamsize_cutoff_max": float(fixture_data["beamsize_cutoff_max"]),
+                    "min_beamsize_cutoff": float(fixture_data["min_beamsize_cutoff"]),
+                    "X": {
+                        "data": {
+                            "k": scan_values,
+                            "x_rms_micron_sq": x_rms_micron_sq,
+                            "y_rms_micron_sq": y_rms_micron_sq,
+                        }
+                    },
+                },
+            )
+
+        h5_path = tmp_path / "plot_emittance_result.h5"
+        saver = H5Saver()
+        saver.dump(result.model_dump(), str(h5_path))
+        loaded_dict = saver.load(str(h5_path))
+        loaded_result = QuadScanEmittanceResult(**loaded_dict)
+
+        fig, axes = plot_emittance_measurement(loaded_result)
+
+        assert len(axes) == 2
+        for ax in axes:
+            collections_by_label = {ele.get_label(): ele for ele in ax.collections}
+            assert "raw" in collections_by_label
+            assert "retained" in collections_by_label
+            assert "cropped" in collections_by_label
+
+        plt.close(fig)
+
+    def test_visualization_from_file(self):
+        saver = H5Saver()
+        info = saver.load(H5_FIXTURE)
+        info.pop("environment_variables", None)
+        result = QuadScanEmittanceResult(**info)
+
+        plot_emittance_measurement(result)
