@@ -122,9 +122,12 @@ def crop_scan(
         If GP fitting fails, model is None, concavity_mask is all False, and concavity_values is all NaN
         while beam-size cutoff cropping is preserved.
     """
-    assert scan_values.ndim == 1, "scan_values must be a one-dimensional array"
-    assert beam_sizes_squared.ndim == 1, "beam_sizes_squared must be a one-dimensional array"
-    assert scan_values.shape == beam_sizes_squared.shape, "scan_values and beam_sizes_squared must have the same shape"
+    if scan_values.ndim != 1:
+        raise ValueError("scan_values must be a one-dimensional array")
+    if beam_sizes_squared.ndim != 1:
+        raise ValueError("beam_sizes_squared must be a one-dimensional array")
+    if scan_values.shape != beam_sizes_squared.shape:
+        raise ValueError("scan_values and beam_sizes_squared must have the same shape")
 
     cropping_mask = np.zeros_like(beam_sizes_squared, dtype=bool)
 
