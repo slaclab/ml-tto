@@ -119,8 +119,8 @@ def _extract_raw_scan_arrays(emittance_result):
     return metadata, scan_values[:npts], x_rms_micron_sq[:npts], y_rms_micron_sq[:npts]
 
 
-def _compute_cutoff_meters(metadata, rms_micron_sq):
-    """Compute the beam-size cutoff in meters from scan metadata.
+def _compute_cutoff_um(metadata, rms_micron_sq):
+    """Compute the beam-size cutoff in microns from scan metadata.
 
     Parameters
     ----------
@@ -150,7 +150,7 @@ def _compute_cutoff_meters(metadata, rms_micron_sq):
         float(beamsize_cutoff_max) * np.sqrt(min_size_micron_sq),
         float(min_beamsize_cutoff),
     )
-    return cutoff_micron * 1e-6
+    return cutoff_micron
 
 
 def validate_beamsize_measurement_result(

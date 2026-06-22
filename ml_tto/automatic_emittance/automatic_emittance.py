@@ -301,7 +301,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         """
         beam_sizes = []
         for ele in self._info:
-            beam_sizes.append(ele.rms_sizes.reshape(1, 2) * 1e-6)
+            beam_sizes.append(ele.rms_sizes.reshape(1, 2) * 1e-6)  # convert to meters
 
         # get scan values and extend for each direction
         scan_values = np.tile(np.array(self.scan_values), (2, 1))
@@ -313,14 +313,16 @@ class MLQuadScanEmittance(QuadScanEmittance):
         dim_names = ["x", "y"]
         for i in range(2):
             # crop the scans using concavity filter and max beam size filter
-            cutoff_size = self._get_cutoff_beamsize(dim_names[i]) * 1e-6
-            sv_cropped, bs_cropped, _, _, _ = crop_scan(
+            cutoff_size = self._get_cutoff_beamsize(dim_names[i])
+            sv_cropped, bs_cropped, _, _, _, _ = crop_scan(
                 scan_values=scan_values[i],
-                beam_sizes=beam_sizes[i],
+                beam_sizes_squared=(beam_sizes[i]*1e6)**2,
                 cutoff_max=cutoff_size,
+                cutoff_min=1.0,  # minimum beam size of 1 micron
             )
+
             scan_values_cropped += [sv_cropped]
-            beam_sizes_cropped += [bs_cropped]
+            beam_sizes_cropped += [bs_cropped**0.5 * 1e-6]  # convert back to meters
 
         return scan_values_cropped, beam_sizes_cropped
 
