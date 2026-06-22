@@ -132,8 +132,7 @@ def _compute_cutoff_um(metadata, rms_micron_sq):
     Returns
     -------
     float or None
-        Cutoff in meters, or None if cutoff metadata is unavailable.
-    """
+        Cutoff in microns, or None if cutoff metadata is unavailable.
 
     beamsize_cutoff_max = metadata.get("beamsize_cutoff_max", None)
     min_beamsize_cutoff = metadata.get("min_beamsize_cutoff", None)
