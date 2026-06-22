@@ -13,22 +13,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _as_1d_float_array(values: np.ndarray) -> np.ndarray:
-    """Convert array-like values to a one-dimensional float array.
-
-    Parameters
-    ----------
-    values : numpy.ndarray
-        Input values to normalize.
-
-    Returns
-    -------
-    numpy.ndarray
-        Flattened one-dimensional float array.
-    """
-
-    return np.asarray(values, dtype=float).reshape(-1)
-
 def crop_scan_by_concavity(
     scan_values: np.ndarray,
     beam_sizes_squared: np.ndarray,
@@ -94,7 +78,7 @@ def crop_scan_by_beam_size(
         Boolean mask indicating which points exceed the beam-size thresholds.
     """
 
-    beam_sizes_cropped = _as_1d_float_array(beam_sizes)
+    beam_sizes_cropped = np.copy(beam_sizes)
 
     cutoff_mask = np.zeros_like(beam_sizes_cropped, dtype=bool)
     if cutoff_max is not None:
@@ -250,7 +234,7 @@ def posterior_mean_concavity(
         Array of second derivative values of the posterior mean at x_values.
     """
 
-    x_values = torch.from_numpy(_as_1d_float_array(x_values))
+    x_values = torch.from_numpy(x_values)
     d2y_dx2 = posterior_mean_second_derivative(model, x_values)
 
     return d2y_dx2.detach().numpy()
