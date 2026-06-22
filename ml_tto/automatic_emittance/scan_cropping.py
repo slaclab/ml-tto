@@ -95,8 +95,14 @@ def crop_scan(
     beam_sizes_squared: np.ndarray,
     cutoff_min: Optional[float] = None,
     cutoff_max: Optional[float] = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Optional[SingleTaskGP]]:
-    """Apply beam-size cutoff and concavity cropping to a scan.
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    Optional[SingleTaskGP],
+]:
 
     Parameters
     ----------
