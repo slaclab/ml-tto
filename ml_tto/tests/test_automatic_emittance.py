@@ -500,4 +500,5 @@ class TestAutomaticEmittance:
         info.pop("environment_variables", None)
         result = QuadScanEmittanceResult(**info)
 
-        plot_emittance_measurement(result)
+        fig, _ = plot_emittance_measurement(result)
+        plt.close(fig)
