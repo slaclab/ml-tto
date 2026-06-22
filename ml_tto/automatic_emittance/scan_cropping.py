@@ -117,10 +117,10 @@ def crop_scan(
     Returns
     -------
     tuple
-        (scan_values_cropped, beam_sizes_cropped, concavity_mask, cutoff_mask, model).
-        The scan values are returned unchanged for alignment with the cropped
-        beam-size array. If GP fitting fails, model is None and concavity_mask
-        is all False while beam-size cutoff cropping is preserved.
+        (scan_values_cropped, beam_sizes_cropped, concavity_mask, cutoff_mask, concavity_values, model).
+        The scan values are returned unchanged for alignment with the cropped beam-size array.
+        If GP fitting fails, model is None, concavity_mask is all False, and concavity_values is all NaN
+        while beam-size cutoff cropping is preserved.
     """
     assert scan_values.ndim == 1, "scan_values must be a one-dimensional array"
     assert beam_sizes_squared.ndim == 1, "beam_sizes_squared must be a one-dimensional array"
