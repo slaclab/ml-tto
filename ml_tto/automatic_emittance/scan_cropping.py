@@ -60,7 +60,7 @@ def crop_scan_by_beam_size(
     beam_sizes: np.ndarray,
     cutoff_min: Optional[float],
     cutoff_max: Optional[float],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """Crop points where beam size exceeds a threshold.
 
     Parameters
