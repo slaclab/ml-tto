@@ -139,10 +139,17 @@ def crop_scan(
     masked_beam_sizes_squared = np.copy(beam_sizes_squared)
     masked_beam_sizes_squared[cropping_mask] = np.nan
 
-    _, concavity_mask, concavity_values, model = crop_scan_by_concavity(
-        scan_values=scan_values,
-        beam_sizes_squared=masked_beam_sizes_squared,
-    )
+    try:
+        _, concavity_mask, concavity_values, model = crop_scan_by_concavity(
+            scan_values=scan_values,
+            beam_sizes_squared=masked_beam_sizes_squared,
+        )
+    except Exception:
+        logger.exception("GP concavity cropping failed; skipping concavity-based cropping.")
+        concavity_mask = np.zeros_like(beam_sizes_squared, dtype=bool)
+        concavity_values = np.full_like(beam_sizes_squared, np.nan, dtype=float)
+        model = None
+
     cropping_mask |= concavity_mask
 
     masked_beam_sizes_squared[cropping_mask] = np.nan
