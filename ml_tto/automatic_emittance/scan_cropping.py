@@ -103,6 +103,8 @@ def crop_scan(
     np.ndarray,
     Optional[SingleTaskGP],
 ]:
+    """
+    Crop scan points based on beam size and concavity.
 
     Parameters
     ----------

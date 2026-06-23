@@ -34,7 +34,7 @@ class TestScanCropping:
         x = np.array([-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0])
         y = (np.array([4.0e-4, 3.0e-4, 2.0e-4, 1.0e-4, 2.0e-4, 3.0e-4, 2.0e-4])*1e6)**2
 
-        y_cropped, concave_down, concavity_values, model = crop_scan_by_concavity(x, y)
+        y_cropped, concavity_mask, concavity_values, model = crop_scan_by_concavity(x, y)
 
         # validate that the posterior mean GP agrees with the square of the original data at the observed points
         assert np.allclose(
@@ -48,5 +48,11 @@ class TestScanCropping:
         assert np.isnan(y_cropped[-2])  # the second to last point should be cropped
 
         # assert that the concavity mask correctly identifies the first and last points as not concave down
-        assert concave_down[0] == True
-        assert concave_down[-2] == True
+        assert concavity_mask[0] == True
+        assert concavity_mask[-2] == True
+
+        # assert that the concavity values are negative for the points that are concave down
+        assert concavity_values[0] < 0
+        assert concavity_values[-2] < 0
+        assert concavity_values[3] > 0  # the middle point should be concave up
+
