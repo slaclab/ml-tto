@@ -1,4 +1,6 @@
 import os
+from collections.abc import Mapping
+
 import numpy as np
 from lcls_tools.common.image.roi import ROI, CircularROI
 from lcls_tools.common.measurements.screen_profile import (
@@ -10,6 +12,143 @@ from lcls_tools.common.measurements.emittance_measurement import (
     EmittanceMeasurementResult,
 )
 from lcls_tools.common.data.saver import H5Saver
+
+
+def _to_1d_float_array(value):
+    """Convert supported input values to a 1D float array.
+
+    Parameters
+    ----------
+    value : Any
+        Input value that can be a scalar, sequence, mapping, numpy array,
+        or None.
+
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional float array representation of the input.
+    """
+    if value is None:
+        return np.array([], dtype=float)
+
+    # Handle pandas-like vectors loaded from QuadScanEmittanceResult metadata.
+    if hasattr(value, "to_numpy"):
+        return np.asarray(value.to_numpy(), dtype=float).reshape(-1)
+
+    if isinstance(value, np.ndarray):
+        return value.astype(float).reshape(-1)
+
+    if isinstance(value, Mapping):
+        keys = list(value.keys())
+
+        def _sort_key(k):
+            k_str = str(k)
+            if k_str.lstrip("-").isdigit():
+                return (0, int(k_str))
+            return (1, k_str)
+
+        sorted_keys = sorted(keys, key=_sort_key)
+        values = [value[k] for k in sorted_keys]
+        return np.array(values, dtype=float).reshape(-1)
+
+    if isinstance(value, (list, tuple)):
+        return np.array(value, dtype=float).reshape(-1)
+
+    return np.array([value], dtype=float)
+
+
+def _get_result_attr(result, key, default=None):
+    """Read an attribute from an object or key from a mapping.
+
+    Parameters
+    ----------
+    result : Any
+        Source object or mapping.
+    key : str
+        Attribute/key name to retrieve.
+    default : Any, optional
+        Fallback value if key/attribute does not exist.
+
+    Returns
+    -------
+    Any
+        Retrieved value or default.
+    """
+
+    if isinstance(result, Mapping):
+        return result.get(key, default)
+    return getattr(result, key, default)
+
+
+def _extract_raw_scan_arrays(emittance_result):
+    """Extract raw scan arrays used for emittance scan plotting.
+
+    Parameters
+    ----------
+    emittance_result : QuadScanEmittanceResult or dict
+        Emittance result with metadata containing raw Xopt scan values.
+
+    Returns
+    -------
+    tuple
+        (metadata, scan_values, x_rms_micron_sq, y_rms_micron_sq), where arrays
+        are length-matched to the shortest available sequence.
+
+    Raises
+    ------
+    ValueError
+        If required raw scan arrays are missing.
+    """
+
+    metadata = _get_result_attr(emittance_result, "metadata", {})
+    x_data = metadata.get("X", {}).get("data", {})
+
+    scan_values = _to_1d_float_array(x_data.get("k", metadata.get("scan_values", [])))
+    x_rms_micron_sq = _to_1d_float_array(x_data.get("x_rms_micron_sq", []))
+    y_rms_micron_sq = _to_1d_float_array(x_data.get("y_rms_micron_sq", []))
+
+    if len(scan_values) == 0 or len(x_rms_micron_sq) == 0 or len(y_rms_micron_sq) == 0:
+        raise ValueError(
+            "Could not find raw scan data in result metadata. "
+            "Expected metadata['X']['data'] to include 'k', 'x_rms_micron_sq', and 'y_rms_micron_sq'."
+        )
+
+    npts = min(len(scan_values), len(x_rms_micron_sq), len(y_rms_micron_sq))
+    return metadata, scan_values[:npts], x_rms_micron_sq[:npts], y_rms_micron_sq[:npts]
+
+
+def _compute_cutoff_um(metadata, rms_micron_sq):
+    """Compute the beam-size cutoff in microns from scan metadata.
+
+    Parameters
+    ----------
+    metadata : dict
+        Emittance metadata dictionary.
+    rms_micron_sq : numpy.ndarray
+        Beam-size-squared values in micron^2.
+
+    Returns
+    -------
+    float or None
+        Cutoff in microns, or None if cutoff metadata is unavailable.
+    """
+
+    beamsize_cutoff_max = metadata.get("beamsize_cutoff_max", None)
+    min_beamsize_cutoff = metadata.get("min_beamsize_cutoff", None)
+
+    if beamsize_cutoff_max is None or min_beamsize_cutoff is None:
+        return None
+
+    finite_mask = np.isfinite(rms_micron_sq) & (rms_micron_sq > 0.0)
+    if not np.any(finite_mask):
+        return None
+
+    min_size_micron_sq = np.nanmin(rms_micron_sq[finite_mask])
+    cutoff_micron = max(
+        float(beamsize_cutoff_max) * np.sqrt(min_size_micron_sq),
+        float(min_beamsize_cutoff),
+    )
+    return cutoff_micron
 
 
 def validate_beamsize_measurement_result(

@@ -1,5 +1,4 @@
 import numpy as np
-from matplotlib import pyplot as plt
 from typing import Optional
 
 from botorch.models.gp_regression import SingleTaskGP
@@ -9,132 +8,181 @@ from botorch import fit_gpytorch_mll
 import torch
 from gpytorch import ExactMarginalLogLikelihood
 
+import logging
 
-def crop_scan(
+logger = logging.getLogger(__name__)
+
+
+def crop_scan_by_concavity(
     scan_values: np.ndarray,
-    beam_sizes: np.ndarray,
-    cutoff_max: Optional[float] = None,
-    visualize: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Finds regions of upward concavity in data using
-    1d GP regression (posterior mean) and removes points
-    outside of these regions from scan data.
-    Also removes points where beam size is greater than
-    (cutoff_max) from scan data.
-    Plots cropping results if specified.
+    beam_sizes_squared: np.ndarray,
+ ) -> tuple[np.ndarray, np.ndarray, np.ndarray, SingleTaskGP]:
+    """Crop points using GP posterior concavity.
 
-    Inputs:
-        scan_values: 1d numpy array of scan input values
-        beam_sizes: 1d numpy array of beam size values in [m]
-        cutoff_max: float specifying upper limit at which to crop
-                    beam_sizes in [m]
-        visualize: boolean specifying whether to plot cropping results
-    Outputs:
-        scan_values_cropped: 1d numpy array of cropped scan_values
-        beam_sizes_cropped: 1d numpy array of cropped beam_sizes
+    Fit a 1D GP model to the beam sizes as a function of the scan values, 
+    then identify which scan points are in regions of upward concavity based
+    on the second derivative of the GP posterior mean. Points where the concavity is not
+    upward are masked out (set to NaN) in the returned beam size array.
+
+    Parameters
+    ----------
+    scan_values : numpy.ndarray
+        One-dimensional scan values in machine units.
+    beam_sizes_squared : numpy.ndarray
+        One-dimensional squared beam sizes in um^2.
+
+    Returns
+    -------
+    tuple
+        (beam_sizes_cropped, concavity_mask, concavity_values, model).
     """
 
-    # remove nans and copy input data before making edits
-    scan_values_no_nans = scan_values[~np.isnan(beam_sizes)]
-    beam_sizes_no_nans = beam_sizes[~np.isnan(beam_sizes)]
-    scan_values_cropped = np.copy(scan_values)
-    beam_sizes_cropped = np.copy(beam_sizes)
+
+    scan_values_no_nans = scan_values[~np.isnan(beam_sizes_squared)]
+    beam_sizes_squared_no_nans = beam_sizes_squared[~np.isnan(beam_sizes_squared)]
 
     # fit 1d gp model to data
-    model = fit_1d_gp_model(scan_values_no_nans, beam_sizes_no_nans**2)
+    model = fit_1d_gp_model(scan_values_no_nans, beam_sizes_squared_no_nans)
 
     # identify which scan points are in regions of model upwards concavity
-    data_is_concave_up = posterior_mean_concavity(model, scan_values)
+    concavity_values = posterior_mean_concavity(model, scan_values)
+    data_is_concave_up = concavity_values > 0
 
     # set beam size data to nan where concavity is not upward
     concavity_mask = ~data_is_concave_up
-    beam_sizes_cropped[concavity_mask] = np.nan
+    beam_sizes_squared_cropped = np.copy(beam_sizes_squared)
+    beam_sizes_squared_cropped[concavity_mask] = np.nan
 
-    # set beam size data to nan where the beam size is larger than some amount
+    return beam_sizes_squared_cropped, concavity_mask, concavity_values, model
+
+
+def crop_scan_by_beam_size(
+    beam_sizes: np.ndarray,
+    cutoff_min: Optional[float],
+    cutoff_max: Optional[float],
+) -> np.ndarray:
+    """Crop points where beam size exceeds a threshold.
+
+    Parameters
+    ----------
+    beam_sizes : numpy.ndarray
+        One-dimensional beam sizes in microns.
+    cutoff_min : float or None
+        Lower beam-size threshold in microns. If None, no cutoff is applied.
+    cutoff_max : float or None
+        Upper beam-size threshold in microns. If None, no cutoff is applied.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean mask indicating which points exceed the beam-size thresholds.
+    """
+
+    beam_sizes_cropped = np.copy(beam_sizes)
+
+    cutoff_mask = np.zeros_like(beam_sizes_cropped, dtype=bool)
     if cutoff_max is not None:
-        cutoff_mask = beam_sizes_cropped > cutoff_max
-    else:
-        cutoff_mask = np.zeros(len(beam_sizes_cropped), dtype=bool)
-    beam_sizes_cropped[cutoff_mask] = np.nan
+        cutoff_mask |= beam_sizes_cropped > cutoff_max
+    
+    if cutoff_min is not None:
+        cutoff_mask |= beam_sizes_cropped < cutoff_min
+    
+    return cutoff_mask
 
-    if visualize:
-        # evaluate the GP fit and its concavity on a linspace
-        fit_x = torch.linspace(scan_values.min(), scan_values.max(), 100).reshape(-1, 1)
-        fit_y = model.posterior(fit_x).mean.detach().numpy().flatten()
-        fit_x = fit_x.detach().numpy().flatten()
-        fit_is_concave_up = posterior_mean_concavity(model, fit_x)
-        fit_y_up = np.ma.masked_array(fit_y, mask=~fit_is_concave_up)
-        fit_y_down = np.ma.masked_array(fit_y, mask=fit_is_concave_up)
 
-        plt.figure()
-        if cutoff_max is not None:
-            # plot the beam size cutoff_max boundary
-            plt.axhline(
-                cutoff_max**2,
-                ls=":",
-                c="k",
-                label="cutoff",
-                zorder=2,
-            )
-        # plot the GP posterior mean where the concavity it upward
-        plt.plot(
-            fit_x,
-            fit_y_up,
-            ls="--",
-            c="C1",
-            label="concave up",
-            zorder=1,
-        )
-        # plot the GP posterior mean where the concavity is downward
-        plt.plot(
-            fit_x,
-            fit_y_down,
-            ls="--",
-            c="C2",
-            label="concave down",
-            zorder=1,
-        )
-        # plot the data that has been removed
-        plt.scatter(
-            scan_values[cutoff_mask + concavity_mask],
-            beam_sizes[cutoff_mask + concavity_mask] ** 2,
-            s=50,
-            facecolors="none",
-            edgecolors="C0",
-            label="data removed",
-            zorder=3,
-        )
-        # plot the data that has remains after cropping
-        plt.scatter(
-            scan_values_cropped,
-            beam_sizes_cropped**2,
-            s=50,
-            marker="+",
-            c="C0",
-            label="data retained",
-            zorder=3,
-        )
-        plt.legend()
-        plt.ylabel("$Beam size^2 (m^2)$")
-        plt.xlabel("Quad value (machine units)")
-        plt.title("Scan Cropping Results")
-        plt.tight_layout()
+def crop_scan(
+    scan_values: np.ndarray,
+    beam_sizes_squared: np.ndarray,
+    cutoff_min: Optional[float] = None,
+    cutoff_max: Optional[float] = None,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    Optional[SingleTaskGP],
+]:
+    """
+    Crop scan points based on beam size and concavity.
 
-    return scan_values_cropped, beam_sizes_cropped
+    Parameters
+    ----------
+    scan_values : numpy.ndarray
+        One-dimensional scan values in machine units.
+    beam_sizes_squared : numpy.ndarray
+        One-dimensional squared beam sizes in microns squared.
+    cutoff_min : float or None, optional
+        Lower beam-size threshold in microns. If None, no cutoff is applied.
+    cutoff_max : float or None, optional
+        Upper beam-size threshold in microns. If None, no cutoff is applied.
+    Returns
+    -------
+    tuple
+        (scan_values_cropped, beam_sizes_cropped, concavity_mask, cutoff_mask, concavity_values, model).
+        The scan values are returned unchanged for alignment with the cropped beam-size array.
+        If GP fitting fails, model is None, concavity_mask is all False, and concavity_values is all NaN
+        while beam-size cutoff cropping is preserved.
+    """
+    if scan_values.ndim != 1:
+        raise ValueError("scan_values must be a one-dimensional array")
+    if beam_sizes_squared.ndim != 1:
+        raise ValueError("beam_sizes_squared must be a one-dimensional array")
+    if scan_values.shape != beam_sizes_squared.shape:
+        raise ValueError("scan_values and beam_sizes_squared must have the same shape")
+
+    cropping_mask = np.zeros_like(beam_sizes_squared, dtype=bool)
+
+    # Always apply the direct beam-size cutoff first -- note that the cutoff is applied to the square root of the input beam sizes squared, which are in microns.
+    cutoff_mask = crop_scan_by_beam_size(
+        beam_sizes= np.sqrt(beam_sizes_squared),
+        cutoff_min=cutoff_min,
+        cutoff_max=cutoff_max,
+    )
+    cropping_mask |= cutoff_mask
+
+    masked_beam_sizes_squared = np.copy(beam_sizes_squared)
+    masked_beam_sizes_squared[cropping_mask] = np.nan
+
+    try:
+        _, concavity_mask, concavity_values, model = crop_scan_by_concavity(
+            scan_values=scan_values,
+            beam_sizes_squared=masked_beam_sizes_squared,
+        )
+    except Exception:
+        logger.exception("GP concavity cropping failed; skipping concavity-based cropping.")
+        concavity_mask = np.zeros_like(beam_sizes_squared, dtype=bool)
+        concavity_values = np.full_like(beam_sizes_squared, np.nan, dtype=float)
+        model = None
+
+    cropping_mask |= concavity_mask
+
+    masked_beam_sizes_squared[cropping_mask] = np.nan
+
+    return (
+        scan_values,
+        masked_beam_sizes_squared,
+        concavity_mask,
+        cutoff_mask,
+        concavity_values,
+        model,
+    )
 
 
 def fit_1d_gp_model(x: np.ndarray, y: np.ndarray) -> SingleTaskGP:
-    """
-    Fits 1d GP regression model to 1d training data.
+    """Fit a one-dimensional GP regression model.
 
-    NOTE: y must not contain NaNs
+    Parameters
+    ----------
+    x : numpy.ndarray
+        One-dimensional training inputs.
+    y : numpy.ndarray
+        One-dimensional training targets. Must not contain NaNs.
 
-    Inputs:
-        x: 1d numpy array containing training inputs
-        y: 1d numpy array containing corresponding training outputs
-    Outputs:
-        model: SingleTaskGP regression model fit to 1d training data (x, y)
+    Returns
+    -------
+    SingleTaskGP
+        Trained GP model for the provided data.
     """
 
     # fit a 1d GP model to the scan data
@@ -157,18 +205,22 @@ def fit_1d_gp_model(x: np.ndarray, y: np.ndarray) -> SingleTaskGP:
 def posterior_mean_second_derivative(
     model: SingleTaskGP, x_values: torch.tensor
 ) -> torch.tensor:
-    """
-    Evaluate the second derivative of the model (GP) posterior mean
-    at the given x-values with respect to x.
+    """Evaluate the second derivative of the GP posterior mean.
 
-    Inputs:
-        model: SingleTaskGP regression model trained on 1d data
-        x_values: 1d torch tensor specifying the inputs at which
-                    to evaluate second derivative
-    Outputs:
-        d2y_dx2: 1d torch tensor containing second derivates of GP
-                posterior mean at the given x-values
+    Parameters
+    ----------
+    model : SingleTaskGP
+        Trained one-dimensional GP model.
+    x_values : torch.Tensor
+        Points at which the second derivative is evaluated.
+
+    Returns
+    -------
+    torch.Tensor
+        Second derivative values of the posterior mean at x_values.
     """
+
+    x_values = x_values.reshape(-1)
 
     def posterior_mean_sum(x_values):
         return model.posterior(x_values.reshape(-1, 1)).mean.sum()
@@ -183,29 +235,24 @@ def posterior_mean_second_derivative(
 def posterior_mean_concavity(
     model: SingleTaskGP, x_values: np.ndarray, visualize: bool = False
 ) -> np.ndarray:
-    """
-    Evaluate the concavity of the model (GP) posterior mean
-    at the given x-values.
+    """Compute the posterior mean concavity of a GP model at given points.
 
-    Inputs:
-        model: SingleTaskGP regression model trained on 1d data
-        x_values: 1d numpy array specifying the inputs at which
-                    to evaluate concavity of model posterior mean
-    Outputs:
-        is_concave_up: 1d numpy boolean array specifying which x-values
-                        are in regions of model upwards concavity
+    Parameters
+    ----------
+    model : SingleTaskGP
+        Trained one-dimensional GP model.
+    x_values : numpy.ndarray
+        One-dimensional array of points for concavity evaluation.
+    visualize : bool, optional
+        Unused compatibility argument.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of second derivative values of the posterior mean at x_values.
     """
 
     x_values = torch.from_numpy(x_values)
     d2y_dx2 = posterior_mean_second_derivative(model, x_values)
 
-    # fig,ax = plt.subplots()
-    # ax.plot(x_values, d2y_dx2)
-    # ax.axhline(0, ls="--", c="k")
-    # ax.set_ylabel("Second Derivative")
-    # ax.set_xlabel("Quad value (machine units)")
-
-    is_concave_up = d2y_dx2 > 0
-    is_concave_up = is_concave_up.detach().numpy()
-
-    return is_concave_up
+    return d2y_dx2.detach().numpy()

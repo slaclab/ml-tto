@@ -152,11 +152,14 @@ class MLQuadScanEmittance(QuadScanEmittance):
         # bctrl refresh rate is less than 10 ms
         start_time = time.time()
         time.sleep(1.0)  # self.bctrl_refresh_rate)
+        ii = 0
         while not np.isclose(self.magnet.bact, inputs["k"], atol=0.01):
             time.sleep(self.bctrl_refresh_rate)
-            logger.debug(
-                f"Waiting for quadrupole strength to update... set val: {inputs['k']}, bact: {self.magnet.bact}"
-            )
+            ii += 1
+            if ii % 100 == 0: # log every 100 cycles (every 2 seconds if refresh rate is 20 ms)
+                logger.debug(
+                    f"Waiting for quadrupole strength to update... set val: {inputs['k']}, bact: {self.magnet.bact}"
+                )
 
         logger.debug(
             f"Quadrupole strength bact is {self.magnet.bact:.4f}, took {time.time() - start_time:.2f} seconds to update"
@@ -298,7 +301,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
         """
         beam_sizes = []
         for ele in self._info:
-            beam_sizes.append(ele.rms_sizes.reshape(1, 2) * 1e-6)
+            beam_sizes.append(ele.rms_sizes.reshape(1, 2) * 1e-6)  # convert to meters
 
         # get scan values and extend for each direction
         scan_values = np.tile(np.array(self.scan_values), (2, 1))
@@ -310,15 +313,16 @@ class MLQuadScanEmittance(QuadScanEmittance):
         dim_names = ["x", "y"]
         for i in range(2):
             # crop the scans using concavity filter and max beam size filter
-            cutoff_size = self._get_cutoff_beamsize(dim_names[i]) * 1e-6
-            sv_cropped, bs_cropped = crop_scan(
+            cutoff_size = self._get_cutoff_beamsize(dim_names[i])
+            sv_cropped, bs_cropped, _, _, _, _ = crop_scan(
                 scan_values=scan_values[i],
-                beam_sizes=beam_sizes[i],
+                beam_sizes_squared=(beam_sizes[i]*1e6)**2,
                 cutoff_max=cutoff_size,
-                visualize=self.visualize_cropping,
+                cutoff_min=1.0,  # minimum beam size of 1 micron
             )
+
             scan_values_cropped += [sv_cropped]
-            beam_sizes_cropped += [bs_cropped]
+            beam_sizes_cropped += [bs_cropped**0.5 * 1e-6]  # convert back to meters
 
         return scan_values_cropped, beam_sizes_cropped
 
