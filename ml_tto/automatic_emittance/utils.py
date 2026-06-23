@@ -103,9 +103,7 @@ def _extract_raw_scan_arrays(emittance_result):
     metadata = _get_result_attr(emittance_result, "metadata", {})
     x_data = metadata.get("X", {}).get("data", {})
 
-    scan_values = _to_1d_float_array(
-        x_data.get("k", metadata.get("scan_values", []))
-    )
+    scan_values = _to_1d_float_array(x_data.get("k", metadata.get("scan_values", [])))
     x_rms_micron_sq = _to_1d_float_array(x_data.get("x_rms_micron_sq", []))
     y_rms_micron_sq = _to_1d_float_array(x_data.get("y_rms_micron_sq", []))
 
@@ -133,6 +131,7 @@ def _compute_cutoff_um(metadata, rms_micron_sq):
     -------
     float or None
         Cutoff in microns, or None if cutoff metadata is unavailable.
+    """
 
     beamsize_cutoff_max = metadata.get("beamsize_cutoff_max", None)
     min_beamsize_cutoff = metadata.get("min_beamsize_cutoff", None)
