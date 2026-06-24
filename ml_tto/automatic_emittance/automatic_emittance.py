@@ -285,7 +285,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
             # run iterations for x/y -- ignore warnings from UCB generator
             logger.info("Running x scans")
-            self.run_iterations("x", self.n_iterations)
+            self.run_iterations("x", self.n_iterations + 2) # add 2 extra iterations for x
             logger.info("Running y scans")
             self.run_iterations("y", self.n_iterations)
 
