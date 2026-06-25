@@ -91,10 +91,10 @@ class MockBeamline:
 
         # return beam sizes in microns
         sigma_x = (
-            outgoing_beam.sigma_x * 1e6 + 5.0 * np.random.randn(1)
+            outgoing_beam.sigma_x.reshape(1) * 1e6
         )
         sigma_y = (
-            outgoing_beam.sigma_y * 1e6 + 5.0 * np.random.randn(1)
+            outgoing_beam.sigma_y.reshape(1) * 1e6
         )
 
         result = MagicMock(ScreenBeamProfileMeasurementResult)
@@ -171,6 +171,9 @@ class TestAutomaticEmittance:
             show_feasibility=True,
         )
         quad_scan.X.data.plot(y="k")
+
+        fig, ax = plot_emittance_measurement(result)
+        #fig.savefig("test_emittance_plot.png", dpi=300)
 
         # check resulting calculations against cheetah simulation ground truth
         assert np.allclose(
