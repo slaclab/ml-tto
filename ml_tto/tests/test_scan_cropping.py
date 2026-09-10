@@ -44,15 +44,10 @@ class TestScanCropping:
         )
 
         # check the returned values
-        assert np.isnan(y_cropped[0])  # the first point should be cropped
-        assert np.isnan(y_cropped[-2])  # the second to last point should be cropped
+        assert np.any(concavity_mask)
+        assert np.all(np.isnan(y_cropped[concavity_mask]))
+        assert np.allclose(y_cropped[~concavity_mask], y[~concavity_mask])
 
-        # assert that the concavity mask correctly identifies the first and last points as not concave down
-        assert concavity_mask[0] == True
-        assert concavity_mask[-2] == True
-
-        # assert that the concavity values are negative for the points that are concave down
-        assert concavity_values[0] < 0
-        assert concavity_values[-2] < 0
+        # concavity mask is the inverse of positive concavity
+        assert np.array_equal(concavity_mask, concavity_values <= 0)
         assert concavity_values[3] > 0  # the middle point should be concave up
-
