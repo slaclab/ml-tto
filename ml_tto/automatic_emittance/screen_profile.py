@@ -10,7 +10,7 @@ from tenacity import (
 
 from ml_tto.errors import NoBeamError
 
-from lcls_tools.common.measurements.screen_profile import (
+from slac_measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
 )

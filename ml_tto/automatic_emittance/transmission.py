@@ -1,5 +1,5 @@
-from lcls_tools.common.measurements.measurement import Measurement
-from lcls_tools.common.devices.bpm import BPM
+from slac_measurements.measurement import Measurement
+from slac_devices.bpm import BPM
 import numpy as np
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from unittest.mock import create_autospec
-from lcls_tools.common.devices.bpm import BPM
+from slac_devices.bpm import BPM
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
 
 

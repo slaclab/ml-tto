@@ -12,9 +12,7 @@ from ml_tto.gpsr.lcls_tools import (
     hdf5_group_to_dict,
     process_automatic_emittance_measurement_data,
 )
-from lcls_tools.common.measurements.emittance_measurement import (
-    QuadScanEmittanceResult,
-)
+from ml_tto.automatic_emittance.utils import quad_scan_result_from_dict
 
 
 class TestGPSRLCLSTools:
@@ -70,7 +68,7 @@ class TestGPSRLCLSTools:
         ]:
             obj[key] = [values for _, values in obj[key].items()]
 
-        result = QuadScanEmittanceResult(**obj)
+        result = quad_scan_result_from_dict(obj)
 
         output = process_automatic_emittance_measurement_data(
             get_lcls_tools_data(result.model_dump()),

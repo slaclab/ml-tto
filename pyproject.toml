@@ -22,19 +22,23 @@ dependencies = [
     "requests",
     "pydantic",
     "h5py",
+    "pandas",
     "scikit-learn",
     "tenacity",
     "xopt >= 3.0.0",
     "cheetah-accelerator",
     "scikit-image",
-    "lcls_tools @ git+https://github.com/slaclab/lcls-tools.git",
+    "slac-devices @ git+https://github.com/slaclab/slac-devices.git@main",
+    "slac-db @ git+https://github.com/slaclab/slac-db.git@main",
+    "slac-measurements @ git+https://github.com/slaclab/slac-measurements.git@main",
+    "slac-model @ git+https://github.com/slaclab/slac-model.git@main",
     "gpsr @ git+https://github.com/roussel-ryan/gpsr.git@v0.2.0"
 ]
 description = "Tools to support high level application development at LCLS using Python"
 dynamic = ["version"]
 name = "ml_tto"
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 docs = [

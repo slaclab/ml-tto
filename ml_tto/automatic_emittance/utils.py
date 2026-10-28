@@ -2,16 +2,52 @@ import os
 from collections.abc import Mapping
 
 import numpy as np
-from lcls_tools.common.image.roi import ROI, CircularROI
-from lcls_tools.common.measurements.screen_profile import (
+from ml_tto.roi import ROI, CircularROI
+from slac_measurements.screen_profile import (
     ScreenBeamProfileMeasurementResult,
 )
-from lcls_tools.common.data.model_general_calcs import bdes_to_kmod
-from lcls_tools.common.data.emittance import compute_emit_bmag
-from lcls_tools.common.measurements.emittance_measurement import (
-    EmittanceMeasurementResult,
+from slac_model.model_general_calcs import bdes_to_kmod, build_quad_rmat
+from slac_measurements.emittance import compute_emit_bmag, normalize_emittance
+from slac_measurements.emittance_measurement import (
+    QuadScanEmittanceResult,
 )
-from lcls_tools.common.data.saver import H5Saver
+from ml_tto.io import H5Saver
+
+
+def quad_scan_result_from_dict(data: dict) -> QuadScanEmittanceResult:
+    """Upgrade historical geometric-emittance results to the SLAC result schema."""
+    data = dict(data)
+    data.pop("environment_variables", None)
+    if "twiss_at_screen" in data:
+        data["twiss"] = data.pop("twiss_at_screen")
+    for key in (
+        "quadrupole_focusing_strengths",
+        "quadrupole_pv_values",
+        "bmag",
+        "phase_advances",
+        "twiss",
+        "rms_beamsizes",
+    ):
+        if isinstance(data.get(key), Mapping):
+            values = data[key]
+            data[key] = [values[key] for key in sorted(values, key=int)]
+    if "geometric_emittance" not in data:
+        if "energy" not in data:
+            data["energy"] = data["metadata"]["energy"]
+        data["geometric_emittance"] = np.asarray(data["emittance"])
+        data["emittance"] = normalize_emittance(
+            data["geometric_emittance"], data["energy"] * 1e-9
+        )
+        data["rms_beamsizes"] = [
+            np.asarray(size) * 1e6 for size in data["rms_beamsizes"]
+        ]
+    if "twiss_at_reconstruction" not in data:
+        matrix = np.asarray(data["beam_matrix"])
+        twiss = matrix * np.array([1.0, -1.0, 1.0])
+        data["twiss_at_reconstruction"] = np.expand_dims(
+            twiss / np.asarray(data["geometric_emittance"]).reshape(2, 1), -2
+        )
+    return QuadScanEmittanceResult(**data)
 
 
 def _to_1d_float_array(value):
@@ -326,11 +362,17 @@ def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None):
     else:
         raise OSError(f"File {h5_filename} is not found.")
 
+    def ordered_arrays(value):
+        if isinstance(value, Mapping):
+            value = [value[key] for key in sorted(value, key=int)]
+        return [np.asarray(item) for item in value]
+
+    beam_sizes = ordered_arrays(result_dict["rms_beamsizes"])
+    if "geometric_emittance" in result_dict:
+        beam_sizes = [size * 1e-6 for size in beam_sizes]
     inputs = {
-        "quad_vals": [
-            i for i in result_dict["quadrupole_pv_values"].values()
-        ],  # list, in kG
-        "beamsizes": [i for i in result_dict["rms_beamsizes"].values()],  # list, in m
+        "quad_vals": ordered_arrays(result_dict["quadrupole_pv_values"]),  # in kG
+        "beamsizes": beam_sizes,  # in m
         "q_len": result_dict["metadata"]["magnet"]["metadata"]["l_eff"],  # in m
         "rmat": result_dict["metadata"]["rmat"],  # 2D array
         "energy": result_dict["metadata"]["energy"],  # in eV
@@ -361,8 +403,9 @@ def emittance_from_h5(h5_filename: str, thin_lens=False, maxiter=None):
     # Call wrapper that takes quads in machine units and beamsize in meters
     results = compute_emit_bmag_machine_units(**inputs)
     results["metadata"] = result_dict["metadata"]
+    results["energy"] = inputs["energy"]
 
-    return EmittanceMeasurementResult(**results)
+    return QuadScanEmittanceResult(**results)
 
 
 def compute_emit_bmag_machine_units(
@@ -374,6 +417,7 @@ def compute_emit_bmag_machine_units(
     twiss_design: np.ndarray,
     thin_lens: bool = False,
     maxiter: int = None,
+    rmat_includes_quad: bool = False,
 ):
     """
     Wrapper for compute_emit_bmag that takes quads in machine units and beamsize in meters.
@@ -396,6 +440,8 @@ def compute_emit_bmag_machine_units(
         Whether to use the thin lens approximation. Default is False.
     maxiter : int, optional
         Maximum number of iterations for the optimization. Default is None.
+    rmat_includes_quad : bool, optional
+        If True, rmat has shape (2, n_steps, 2, 2) and already includes the quad.
 
     Returns
     -------
@@ -409,9 +455,12 @@ def compute_emit_bmag_machine_units(
     # Prepare outputs
     results = {
         "emittance": [],
+        "geometric_emittance": [],
         "twiss": [],
+        "twiss_at_reconstruction": [],
         "beam_matrix": [],
         "bmag": [] if twiss_design is not None else None,
+        "phase_advances": [] if twiss_design is not None else None,
         "quadrupole_focusing_strengths": [],
         "quadrupole_pv_values": [],
         "rms_beamsizes": [],
@@ -421,27 +470,35 @@ def compute_emit_bmag_machine_units(
     # fit scans independently for x/y
     # only keep data that has non-nan beam sizes -- independent for x/y
     for i in range(2):
+        if rmat_includes_quad:
+            total_rmat = rmat[i][~np.isnan(beamsizes[i])]
+        else:
+            quad_rmat = build_quad_rmat(kmod_list[i], q_len, thin_lens=thin_lens)
+            total_rmat = rmat[i] @ quad_rmat
         result = compute_emit_bmag(
-            k=kmod_list[i],
-            beamsize_squared=beamsizes_squared_list[i],
-            q_len=q_len,
-            rmat=rmat[i],
-            twiss_design=twiss_design[i] if twiss_design is not None else None,
-            thin_lens=thin_lens,
+            beamsize_squared=np.expand_dims(beamsizes_squared_list[i], -1),
+            rmat=total_rmat,
+            twiss_design=(
+                np.expand_dims(twiss_design[i], -2)
+                if twiss_design is not None
+                else None
+            ),
             maxiter=maxiter,
         )
+        result["geometric_emittance"] = result["emittance"]
+        result["emittance"] = normalize_emittance(result["emittance"], energy * 1e-9)
 
         result.update({"quadrupole_focusing_strengths": kmod_list[i]})
         result.update({"quadrupole_pv_values": quad_vals[i][~np.isnan(beamsizes[i])]})
 
         # add results to dict object
         for name, value in result.items():
-            if name == "bmag" and value is None:
+            if name in {"bmag", "phase_advances"} and value is None:
                 continue
             else:  # beam matrix and emittance get appended
                 results[name].append(value)
 
-        results["rms_beamsizes"].append(beamsizes[i][~np.isnan(beamsizes[i])])
+        results["rms_beamsizes"].append(beamsizes[i][~np.isnan(beamsizes[i])] * 1e6)
 
     return results
 

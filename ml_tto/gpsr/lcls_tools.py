@@ -1,7 +1,7 @@
 import h5py
 import torch
 import numpy as np
-from lcls_tools.common.data.model_general_calcs import bdes_to_kmod, build_quad_rmat
+from slac_model.model_general_calcs import bdes_to_kmod, build_quad_rmat
 from gpsr.data_processing import process_images
 
 from ml_tto.gpsr.utils import image_snr

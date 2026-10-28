@@ -1,8 +1,8 @@
-from lcls_tools.common.image.roi import CircularROI, ROI
+from ml_tto.roi import CircularROI, ROI
 from unittest.mock import MagicMock
 import numpy as np
 
-from lcls_tools.common.measurements.screen_profile import (
+from slac_measurements.screen_profile import (
     ScreenBeamProfileMeasurementResult,
 )
 from ml_tto.automatic_emittance.utils import (

@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 import torch
 from cheetah import Drift, ParameterBeam, Quadrupole, Segment
-from lcls_tools.common.devices.magnet import Magnet, MagnetMetadata
-from lcls_tools.common.devices.screen import Screen
-from lcls_tools.common.image.roi import CircularROI
+from slac_devices.magnet import Magnet, MagnetMetadata
+from slac_devices.screen import Screen
+from ml_tto.roi import CircularROI
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
@@ -123,7 +123,7 @@ def run_calc():
 
     # check resulting calculations against cheetah simulation ground truth
     assert np.allclose(
-        result.emittance,
+        result.geometric_emittance,
         np.array([1.0e-2, 1.0e-1]).reshape(2, 1),
         rtol=1.0e-1,
     )
