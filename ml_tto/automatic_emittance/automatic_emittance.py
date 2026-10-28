@@ -45,7 +45,7 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     This class uses Bayesian optimization to explore the quadrupole strength
     and measure the beam size at different quadrupole settings. It uses the
-    Xopt library to perform the optimization.
+    Xopt library to perform the optimizatio.
 
     Attributes
     ----------
