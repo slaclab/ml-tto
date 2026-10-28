@@ -28,10 +28,10 @@ dependencies = [
     "xopt >= 3.0.0",
     "cheetah-accelerator",
     "scikit-image",
-    "slac-devices @ git+https://github.com/slaclab/slac-devices.git@main",
-    "slac-db @ git+https://github.com/slaclab/slac-db.git@main",
-    "slac-measurements @ git+https://github.com/slaclab/slac-measurements.git@main",
-    "slac-model @ git+https://github.com/slaclab/slac-model.git@main",
+    "slac-devices @ git+https://github.com/slaclab/slac-devices.git",
+    "slac-db @ git+https://github.com/slaclab/slac-db.git",
+    "slac-measurements @ git+https://github.com/slaclab/slac-measurements.git",
+    "slac-model @ git+https://github.com/slaclab/slac-model.git",
     "gpsr @ git+https://github.com/roussel-ryan/gpsr.git@v0.2.0"
 ]
 description = "Tools to support high level application development at LCLS using Python"
