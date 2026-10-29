@@ -4,13 +4,31 @@ from typing import Optional
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms.outcome import Standardize
 from botorch.models.transforms.input import Normalize
+from botorch.models.utils.gpytorch_modules import get_covar_module_with_dim_scaled_prior
 from botorch import fit_gpytorch_mll
 import torch
 from gpytorch import ExactMarginalLogLikelihood
+from gpytorch.kernels import RBFKernel
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class _ScanRBFKernel(RBFKernel):
+    """RBF covariance with valid second derivatives at coincident inputs."""
+
+    def forward(
+        self, x1: torch.Tensor, x2: torch.Tensor, diag: bool = False, **params
+    ) -> torch.Tensor:
+        x1 = x1 / self.lengthscale
+        x2 = x2 / self.lengthscale
+        if params.get("last_dim_is_batch", False):
+            x1 = x1.transpose(-1, -2).unsqueeze(-1)
+            x2 = x2.transpose(-1, -2).unsqueeze(-1)
+        differences = x1 - x2 if diag else x1.unsqueeze(-2) - x2.unsqueeze(-3)
+        # Avoid GPyTorch's distance clamp, which loses curvature at zero on PyTorch 2.15.
+        return torch.exp(-0.5 * differences.square().sum(dim=-1))
 
 
 def crop_scan_by_concavity(
@@ -190,9 +208,16 @@ def fit_1d_gp_model(x: np.ndarray, y: np.ndarray) -> SingleTaskGP:
     train_Y = torch.from_numpy(y).reshape(-1, 1)
     outcome_transform = Standardize(m=1)
     input_transform = Normalize(d=1)
+    default_kernel = get_covar_module_with_dim_scaled_prior(ard_num_dims=1)
+    covar_module = _ScanRBFKernel(
+        ard_num_dims=1,
+        lengthscale_prior=default_kernel.lengthscale_prior,
+        lengthscale_constraint=default_kernel.raw_lengthscale_constraint,
+    )
     model = SingleTaskGP(
         train_X,
         train_Y,
+        covar_module=covar_module,
         outcome_transform=outcome_transform,
         input_transform=input_transform,
     )
