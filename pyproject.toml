@@ -31,7 +31,7 @@ dependencies = [
     "slac-devices @ git+https://github.com/slaclab/slac-devices.git@main",
     "slac-db @ git+https://github.com/slaclab/slac-db.git@main",
     "slac-measurements @ git+https://github.com/slaclab/slac-measurements.git",
-    "slac-model @ git+https://github.com/slaclab/slac-model.git",
+    "slac-model @ git+https://github.com/slaclab/slac-model.git@main",
     "gpsr @ git+https://github.com/roussel-ryan/gpsr.git@v0.2.0"
 ]
 description = "Tools to support high level application development at LCLS using Python"
