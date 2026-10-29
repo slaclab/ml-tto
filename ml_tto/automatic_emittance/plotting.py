@@ -21,11 +21,11 @@ from ml_tto.automatic_emittance.utils import (
 def plot_image_projection_fit(result):
     """Plot an image and its fitted horizontal and vertical projections."""
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    axes[0].imshow(result.image, origin="lower")
+    axes[0].imshow(result.image.T, origin="lower")
     axes[0].set_title("Beam image")
     module = import_module(f"slac_measurements.fitting.{result.projection_fit_module}")
     for dimension, ax in enumerate(axes[1:]):
-        projection = np.sum(result.image, axis=dimension)
+        projection = np.sum(result.image, axis=1 - dimension)
         coordinates = np.arange(len(projection))
         ax.plot(coordinates, projection, label="data")
         ax.plot(

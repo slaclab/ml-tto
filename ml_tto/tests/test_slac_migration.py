@@ -12,6 +12,7 @@ from slac_db.device import get_all_accessors, get_attribute
 from slac_devices.magnet import Magnet
 from slac_devices.reader import create_device
 from slac_measurements.emittance_measurement import QuadScanEmittanceResult
+from slac_measurements.fitting.gaussian import curve
 from slac_measurements.image.fit import ImageProjectionFit
 from slac_model.model_general_calcs import bdes_to_kmod, build_quad_rmat
 
@@ -152,26 +153,45 @@ def test_legacy_result_upgrade(filename):
     assert np.array_equal(reloaded.geometric_emittance, result.geometric_emittance)
 
 
-def test_recursive_fit_preserves_original_coordinates():
-    y, x = np.indices((120, 180))
-    image = 1000 * np.exp(-0.5 * (((x - 110) / 8) ** 2 + ((y - 40) / 5) ** 2))
+@pytest.mark.parametrize(
+    "centroid, rms_size",
+    [([110, 40], [8, 5]), ([40, 110], [5, 8])],
+)
+def test_recursive_fit_preserves_original_coordinates(centroid, rms_size):
+    x, y = np.indices((180, 160))
+    image = 1000 * np.exp(
+        -0.5
+        * (((x - centroid[0]) / rms_size[0]) ** 2
+           + ((y - centroid[1]) / rms_size[1]) ** 2)
+    )
     result = RecursiveImageProjectionFit().fit_image(image)
     assert result.image.shape[0] < image.shape[0]
     assert result.image.shape[1] < image.shape[1]
-    assert np.allclose(result.centroid, [110, 40], atol=0.1)
-    assert np.allclose(result.rms_size, [8, 5], atol=0.2)
+    assert np.allclose(result.centroid, centroid, atol=0.1)
+    assert np.allclose(result.rms_size, rms_size, atol=0.2)
     assert np.allclose(np.mean(result.beam_extent, axis=1), result.centroid)
 
 
 def test_projection_plot_uses_current_fitting_module():
-    y, x = np.indices((80, 100))
+    x, y = np.indices((100, 80))
     image = 1000 * np.exp(-0.5 * (((x - 50) / 8) ** 2 + ((y - 40) / 5) ** 2))
     result = ImageProjectionFit().fit_image(image)
+    assert np.allclose(result.centroid, [50, 40], atol=0.1)
+    assert np.allclose(result.rms_size, [8, 5], atol=0.2)
     fig, axes = plot_image_projection_fit(result)
     assert len(axes) == 3
     assert len(axes[0].images) == 1
-    for ax in axes[1:]:
+    assert np.array_equal(axes[0].images[0].get_array(), image.T)
+    for dim, ax in enumerate(axes[1:]):
         assert [line.get_label() for line in ax.lines] == ["data", "fit"]
+        projection = image.sum(axis=1 - dim)
+        assert np.array_equal(ax.lines[0].get_ydata(), projection)
+        parameters = result.projection_fit_parameters[dim]
+        expected_fit = curve(
+            np.arange(len(projection)),
+            **{key: parameters[key] for key in ("mean", "sigma", "amp", "off")},
+        )
+        np.testing.assert_allclose(ax.lines[1].get_ydata(), expected_fit)
     plt.close(fig)
 
 

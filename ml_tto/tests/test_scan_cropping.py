@@ -1,6 +1,7 @@
 import torch
+from unittest.mock import patch
 
-from ml_tto.automatic_emittance.scan_cropping import crop_scan, crop_scan_by_beam_size
+from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.scan_cropping import crop_scan_by_concavity
 
 import numpy as np
@@ -36,23 +37,53 @@ class TestScanCropping:
 
         y_cropped, concavity_mask, concavity_values, model = crop_scan_by_concavity(x, y)
 
-        # validate that the posterior mean GP agrees with the square of the original data at the observed points
+        # The fit should reproduce the observed squared beam sizes.
         assert np.allclose(
-            model.posterior(torch.tensor(x.reshape(-1, 1), dtype=torch.float32)).mean.detach().numpy().flatten(),
+            model.posterior(torch.tensor(x.reshape(-1, 1))).mean.detach().numpy().flatten(),
             y,
             rtol=1e-1,
         )
 
-        # check the returned values
-        assert np.isnan(y_cropped[0])  # the first point should be cropped
-        assert np.isnan(y_cropped[-2])  # the second to last point should be cropped
-
-        # assert that the concavity mask correctly identifies the first and last points as not concave down
-        assert concavity_mask[0] == True
-        assert concavity_mask[-2] == True
-
-        # assert that the concavity values are negative for the points that are concave down
-        assert concavity_values[0] < 0
+        # Boundary curvature depends on the fitted GP; verify derivatives independently.
+        step = 1e-3
+        inputs = torch.tensor(x.reshape(-1, 1))
+        with torch.no_grad():
+            numerical_concavity = (
+                model.posterior(inputs + step).mean
+                - 2 * model.posterior(inputs).mean
+                + model.posterior(inputs - step).mean
+            ).numpy().flatten() / step**2
+        np.testing.assert_allclose(
+            concavity_values, numerical_concavity, rtol=1e-3, atol=1e-2
+        )
+        assert concavity_mask.dtype == bool
+        assert np.array_equal(concavity_mask, concavity_values <= 0)
+        assert np.array_equal(np.isnan(y_cropped), concavity_mask)
+        assert np.array_equal(y_cropped[~concavity_mask], y[~concavity_mask])
         assert concavity_values[-2] < 0
         assert concavity_values[3] > 0  # the middle point should be concave up
 
+    def test_cropping_by_concavity_masks_nonpositive_curvature(self):
+        x = np.arange(5.0)
+        y = np.array([160000.0, 90000.0, 40000.0, 10000.0, 40000.0])
+        original_y = y.copy()
+        curvature = np.array([-2.0, 0.0, 3.0, 4.0, -1.0])
+        expected_mask = np.array([True, True, False, False, True])
+
+        with (
+            patch(
+                "ml_tto.automatic_emittance.scan_cropping.fit_1d_gp_model"
+            ) as fit_model,
+            patch(
+                "ml_tto.automatic_emittance.scan_cropping.posterior_mean_concavity",
+                return_value=curvature,
+            ),
+        ):
+            cropped, mask, values, model = crop_scan_by_concavity(x, y)
+
+        assert model is fit_model.return_value
+        assert np.array_equal(values, curvature)
+        assert np.array_equal(mask, expected_mask)
+        assert np.array_equal(np.isnan(cropped), expected_mask)
+        assert np.array_equal(cropped[~mask], y[~mask])
+        assert np.array_equal(y, original_y)

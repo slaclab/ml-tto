@@ -18,9 +18,10 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
     def _fit_image(self, image: np.ndarray):
         """
-        Fit the image recusrively by cropping the image to the bounding box of the first fit
+        Fit the image recursively by cropping the image to the bounding box of the first fit
         and then refitting the image. This is done to avoid fitting the background noise
         and to get a more accurate fit of the beam size and location.
+        Images and crop offsets follow slac-measurements' (x, y) axis order.
         """
         cropped_image, offsets = process_images(
             image,
@@ -33,7 +34,7 @@ class RecursiveImageProjectionFit(ImageProjectionFit):
 
         for i in range(2):
             if np.isfinite(result.rms_size[i]):
-                offset = offsets.reshape(-1, 2)[0, 1 - i]
+                offset = offsets.reshape(-1, 2)[0, i]
                 result.centroid[i] += offset
                 result.beam_extent[i] += offset
 
