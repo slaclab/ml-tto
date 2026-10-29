@@ -16,10 +16,10 @@ from xopt.generators.bayesian import (
 )
 from xopt.generators.bayesian.models.standard import StandardModelConstructor
 
-from lcls_tools.common.devices.tcav import TCAV
+from slac_devices.tcav import TCAV
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
-from lcls_tools.common.devices.bpm import BPM
-from lcls_tools.common.devices.reader import create_bpm
+from slac_devices.bpm import BPM
+from slac_devices.reader import create_bpm
 
 from scipy.stats import linregress
 

@@ -7,25 +7,26 @@ import pytest
 import torch
 from cheetah import Segment, Quadrupole, Drift, ParameterBeam
 
-from lcls_tools.common.devices.magnet import Magnet, MagnetMetadata
-from lcls_tools.common.devices.screen import Screen
-from lcls_tools.common.image.processing import ImageProcessor
-from lcls_tools.common.devices.bpm import BPM
-from lcls_tools.common.data.saver import H5Saver
-from lcls_tools.common.measurements.emittance_measurement import (
+from slac_devices.magnet import Magnet, MagnetMetadata
+from slac_devices.screen import Screen
+from slac_measurements.image.processing import ImageProcessor
+from slac_devices.bpm import BPM
+from ml_tto.io import H5Saver
+from slac_measurements.emittance_measurement import (
     QuadScanEmittanceResult,
 )
 
 from ml_tto.automatic_emittance.automatic_emittance import (
     MLQuadScanEmittance,
 )
-from lcls_tools.common.measurements.screen_profile import (
+from slac_measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
     ScreenBeamProfileMeasurementResult,
 )
-from lcls_tools.common.image.fit import ImageProjectionFit
+from slac_measurements.image.fit import ImageProjectionFit
 from ml_tto.automatic_emittance.plotting import plot_emittance_measurement
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
+from ml_tto.automatic_emittance.utils import quad_scan_result_from_dict
 
 
 TEST_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -177,7 +178,7 @@ class TestAutomaticEmittance:
 
         # check resulting calculations against cheetah simulation ground truth
         assert np.allclose(
-            result.emittance,
+            result.geometric_emittance,
             np.array([1.0e-2, 1.0e-1]).reshape(2, 1),
             rtol=1.5e-1,
         )
@@ -190,7 +191,7 @@ class TestAutomaticEmittance:
         # make sure that we return the initial quadrupole setting at the end
         assert mock_beamline.magnet.bctrl == initial_bctrl
 
-    def test_file_dump(self):
+    def test_file_dump(self, tmp_path):
         initial_beam = ParameterBeam.from_twiss(
             beta_x=torch.tensor(5.0),
             alpha_x=torch.tensor(5.0),
@@ -247,10 +248,10 @@ class TestAutomaticEmittance:
         # Save results to file
         result_dict = result.model_dump()
         saver = H5Saver()
-        saver.dump(result_dict, "emittance_test.h5")
+        saver.dump(result_dict, tmp_path / "emittance_test.h5")
 
         # Load results from file
-        loaded_dict = saver.load("emittance_test.h5")
+        loaded_dict = saver.load(tmp_path / "emittance_test.h5")
 
         # Check if the loaded dictionary is the same as the original
         assert result_dict.keys() == loaded_dict.keys()
@@ -258,10 +259,10 @@ class TestAutomaticEmittance:
         # check quad_scan serialization
         quad_scan_dict = quad_scan.model_dump()
         quad_scan_saver = H5Saver()
-        quad_scan_saver.dump(quad_scan_dict, "quad_scan_test.h5")
+        quad_scan_saver.dump(quad_scan_dict, tmp_path / "quad_scan_test.h5")
 
         # Load quad_scan from file
-        loaded_quad_scan_dict = quad_scan_saver.load("quad_scan_test.h5")
+        loaded_quad_scan_dict = quad_scan_saver.load(tmp_path / "quad_scan_test.h5")
         assert quad_scan_dict.keys() == loaded_quad_scan_dict.keys()
 
     def test_evaluate_callback(self):
@@ -456,18 +457,19 @@ class TestAutomaticEmittance:
             x_rms_micron_sq = np.array(fixture_data["x_rms_micron_sq"], dtype=float)
             y_rms_micron_sq = np.array(fixture_data["y_rms_micron_sq"], dtype=float)
 
-            result = QuadScanEmittanceResult(
-                emittance=np.array([[1.0e-8], [2.0e-8]]),
-                bmag=np.array([1.0, 1.0]),
-                twiss=np.array([[5.0, -1.0], [6.0, 1.0]]),
-                rms_beamsizes=np.array([
+            result = quad_scan_result_from_dict({
+                "emittance": np.array([[1.0e-8], [2.0e-8]]),
+                "bmag": np.array([1.0, 1.0]),
+                "twiss": np.array([[5.0, -1.0], [6.0, 1.0]]),
+                "rms_beamsizes": np.array([
                     np.sqrt(np.clip(x_rms_micron_sq, a_min=0.0, a_max=None)) * 1e-6,
                     np.sqrt(np.clip(y_rms_micron_sq, a_min=0.0, a_max=None)) * 1e-6,
                 ]),
-                beam_matrix=np.array([[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]]),
-                quadrupole_focusing_strengths=[scan_values, scan_values],
-                quadrupole_pv_values=[scan_values, scan_values],
-                metadata={
+                "beam_matrix": np.array([[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]]),
+                "quadrupole_focusing_strengths": [scan_values, scan_values],
+                "quadrupole_pv_values": [scan_values, scan_values],
+                "metadata": {
+                    "energy": 125e6,
                     "beamsize_cutoff_max": float(fixture_data["beamsize_cutoff_max"]),
                     "min_beamsize_cutoff": float(fixture_data["min_beamsize_cutoff"]),
                     "X": {
@@ -478,7 +480,7 @@ class TestAutomaticEmittance:
                         }
                     },
                 },
-            )
+            })
 
         h5_path = tmp_path / "plot_emittance_result.h5"
         saver = H5Saver()
@@ -501,7 +503,7 @@ class TestAutomaticEmittance:
         saver = H5Saver()
         info = saver.load(H5_FIXTURE)
         info.pop("environment_variables", None)
-        result = QuadScanEmittanceResult(**info)
+        result = quad_scan_result_from_dict(info)
 
         fig, _ = plot_emittance_measurement(result)
         plt.close(fig)

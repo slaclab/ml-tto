@@ -4,7 +4,7 @@ import numpy as np
 
 from skimage.filters import threshold_triangle
 from scipy.ndimage import median_filter
-from lcls_tools.common.data.model_general_calcs import bmag
+from slac_model.model_general_calcs import bmag
 import lightning as L
 from gpsr.modeling import GPSRLattice
 from cheetah.accelerator import Segment, CustomTransferMap

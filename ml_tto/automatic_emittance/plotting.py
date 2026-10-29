@@ -1,15 +1,11 @@
+from importlib import import_module
+from inspect import signature
+
 import numpy as np
 from matplotlib import pyplot as plt
 import torch
 
-from lcls_tools.common.data.saver import H5Saver
-from lcls_tools.common.measurements.emittance_measurement import (
-    QuadScanEmittanceResult,
-)
-
-from lcls_tools.common.frontend.plotting.image import (
-    plot_image_projection_fit,
-)
+from ml_tto.io import H5Saver
 
 from ml_tto.automatic_emittance.scan_cropping import (
     crop_scan,
@@ -18,7 +14,36 @@ from ml_tto.automatic_emittance.scan_cropping import (
 from ml_tto.automatic_emittance.utils import (
     _compute_cutoff_um,
     _extract_raw_scan_arrays,
+    quad_scan_result_from_dict,
 )
+
+
+def plot_image_projection_fit(result):
+    """Plot an image and its fitted horizontal and vertical projections."""
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    axes[0].imshow(result.image.T, origin="lower")
+    axes[0].set_title("Beam image")
+    module = import_module(f"slac_measurements.fitting.{result.projection_fit_module}")
+    for dimension, ax in enumerate(axes[1:]):
+        projection = np.sum(result.image, axis=1 - dimension)
+        coordinates = np.arange(len(projection))
+        ax.plot(coordinates, projection, label="data")
+        ax.plot(
+            coordinates,
+            module.curve(
+                coordinates,
+                **{
+                    key: value
+                    for key, value in result.projection_fit_parameters[dimension].items()
+                    if key in signature(module.curve).parameters
+                },
+            ),
+            label="fit",
+        )
+        ax.set_title(("X projection", "Y projection")[dimension])
+        ax.legend()
+    fig.tight_layout()
+    return fig, axes
 
 
 def plot_screen_profile_measurement(measurement):
@@ -34,7 +59,7 @@ def plot_screen_profile_measurement(measurement):
     -------
     tuple
         Matplotlib figure and axes returned by
-        lcls_tools.common.frontend.plotting.image.plot_image_projection_fit.
+        plot_image_projection_fit.
     """
 
     result = measurement.beam_fit.fit_image(
@@ -187,6 +212,6 @@ def plot_emittance_measurement_from_file(file_path):
     saver = H5Saver()
     info = saver.load(file_path)
     info.pop("environment_variables", None)
-    result = QuadScanEmittanceResult(**info)
+    result = quad_scan_result_from_dict(info)
 
     return plot_emittance_measurement(result)

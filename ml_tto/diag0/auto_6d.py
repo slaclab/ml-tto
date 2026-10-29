@@ -3,7 +3,7 @@ import logging
 logger = logging.getLogger("auto_6d")
 
 from ml_tto.diag0.auto_emittance import run_automatic_emittance
-from lcls_tools.common.data.saver import H5Saver
+from ml_tto.io import H5Saver
 import time
 import pandas as pd
 import yaml

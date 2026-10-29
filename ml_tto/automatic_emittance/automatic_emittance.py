@@ -19,15 +19,16 @@ from tenacity import (
     RetryError,
 )
 
-from lcls_tools.common.measurements.emittance_measurement import (
+from slac_measurements.emittance_measurement import (
     QuadScanEmittance,
     QuadScanEmittanceResult,
 )
-from lcls_tools.common.measurements.screen_profile import (
+from slac_measurements.screen_profile import (
     ScreenBeamProfileMeasurement,
 )
 from ml_tto.automatic_emittance.scan_cropping import crop_scan
 from ml_tto.automatic_emittance.transmission import TransmissionMeasurement
+from ml_tto.automatic_emittance.utils import compute_emit_bmag_machine_units
 from ml_tto.gpsr.lcls_tools import (
     get_lcls_tools_data,
     process_automatic_emittance_measurement_data,
@@ -48,6 +49,8 @@ class MLQuadScanEmittance(QuadScanEmittance):
 
     Attributes
     ----------
+    energy : float
+        Beam energy in eV.
     scan_values : list[float]
         List of quadrupole strengths used in the scan.
     n_initial_points : PositiveInt
@@ -113,6 +116,46 @@ class MLQuadScanEmittance(QuadScanEmittance):
     # data storage
     X: Optional[Xopt] = None
     scan_values: Optional[list[float]] = []
+
+    def calculate_emittance(self):
+        """Use the SLAC result schema while retaining the scan's eV energy input."""
+        scan_values, beam_sizes = self._get_beamsizes_scan_values_from_info()
+        magnet_length = self.magnet.metadata.l_eff
+        if magnet_length is None:
+            raise ValueError(f"Magnet {self.magnet.name} needs an effective length.")
+        design_twiss = (
+            np.array(
+                [
+                    [self.design_twiss["beta_x"], self.design_twiss["alpha_x"]],
+                    [self.design_twiss["beta_y"], self.design_twiss["alpha_y"]],
+                ]
+            )
+            if self.design_twiss is not None
+            else None
+        )
+        rmat = self.rmat if self.rmat_given else np.stack(self.rmat, axis=1)
+        results = compute_emit_bmag_machine_units(
+            quad_vals=scan_values,
+            beamsizes=beam_sizes,
+            q_len=magnet_length,
+            rmat=rmat,
+            energy=self.energy,
+            twiss_design=design_twiss,
+            rmat_includes_quad=not self.rmat_given,
+        )
+        metadata = self.model_dump()
+        metadata["resolution"] = self.beamsize_measurement.beam_profile_device.resolution
+        metadata["image_data"] = {
+            str(value): result.model_dump()
+            for value, result in zip(self.scan_values, self._info)
+        }
+        return QuadScanEmittanceResult(
+            **results,
+            metadata=metadata,
+            rmats=self.raw_rmats,
+            design_twiss=self.design_twiss,
+            energy=self.energy,
+        )
 
     @field_serializer("X")
     def serialize_X(self, X, info):
@@ -432,11 +475,30 @@ class GPSRMLQuadScanEmittance(MLQuadScanEmittance):
             formatted_result = QuadScanEmittanceResult(
                 quadrupole_focusing_strengths=[processed_data["quad_strengths"]] * 2,
                 quadrupole_pv_values=[processed_data["quad_pv_values"]] * 2,
-                emittance=emittance,
+                geometric_emittance=emittance,
+                emittance=np.array(
+                    [gpsr_result["norm_emittance_x"], gpsr_result["norm_emittance_y"]]
+                ).reshape(2, 1),
                 bmag=gpsr_result["bmag"],
                 twiss=gpsr_result["twiss"],
-                rms_beamsizes=gpsr_result["rms_beamsizes"],
-                beam_matrix=gpsr_result["beam_matrix"],
+                twiss_at_reconstruction=np.array(
+                    [
+                        [
+                            gpsr_result[f"beta_{dim}"],
+                            gpsr_result[f"alpha_{dim}"],
+                            (1 + gpsr_result[f"alpha_{dim}"] ** 2)
+                            / gpsr_result[f"beta_{dim}"],
+                        ]
+                        for dim in ("x", "y")
+                    ]
+                ).reshape(2, 1, 3),
+                rms_beamsizes=[
+                    np.asarray(size) * 1e6 for size in gpsr_result["rms_beamsizes"]
+                ],
+                beam_matrix=gpsr_result["beam_matrix"] * 1e6,
+                energy=self.energy,
+                rmats=initial_result.rmats,
+                design_twiss=initial_result.design_twiss,
                 metadata=initial_result.metadata,
             )
 
