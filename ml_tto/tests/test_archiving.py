@@ -162,6 +162,105 @@ def test_snapshot_handles_string_pv(archiver, tmp_path):
         assert n[0] == 1.5
 
 
+def _ids(root):
+    return [s.decode() if isinstance(s, bytes) else s for s in root.attrs["IDs"]]
+
+
+def test_snapshot_appends_batches_to_open_group(archiver, tmp_path):
+    _install_fake_epics(lambda pvs, timeout=None: [1.0] * len(pvs))
+
+    out = tmp_path / "multi.h5"
+    with h5py.File(out, "w") as f:
+        b1 = archiver.snapshot("GUNB", group=f)
+        b2 = archiver.snapshot("HTR", group=f)
+        assert isinstance(b1, h5py.Group) and isinstance(b2, h5py.Group)
+
+    with h5py.File(out, "r") as f:
+        ids = _ids(f)
+        assert len(ids) == 2 and len(set(ids)) == 2
+        assert f.attrs["Data_Standard_Version"] == "0.1.2"
+        for bid in ids:
+            assert tuple(f[bid].attrs["batch_dims"]) == (1,)
+            assert f[bid]["observables"]["Timestamp"].shape == (1,)
+        assert "QUAD:IN20:361:BACT" in f[ids[1]]["observables"]
+        assert "QUAD:IN20:361:BACT" not in f[ids[0]]["observables"]
+
+
+def test_snapshot_appends_to_existing_archive(archiver, tmp_path):
+    _install_fake_epics(lambda pvs, timeout=None: [1.0] * len(pvs))
+
+    out = tmp_path / "existing.h5"
+    archiver.snapshot("GUNB", path=out)
+    with h5py.File(out, "r") as f:
+        (first_id,) = _ids(f)
+
+    with h5py.File(out, "a") as f:
+        archiver.snapshot("GUNB", group=f)
+
+    with h5py.File(out, "r") as f:
+        ids = _ids(f)
+        assert ids[0] == first_id and len(ids) == 2
+        assert set(ids) == set(f.keys())
+
+
+def test_snapshot_group_rejects_version_mismatch_before_reading(archiver, tmp_path):
+    calls = {"n": 0}
+
+    def fake_caget(pvs, timeout=None):
+        calls["n"] += 1
+        return [1.0] * len(pvs)
+
+    _install_fake_epics(fake_caget)
+
+    with h5py.File(tmp_path / "old.h5", "w") as f:
+        f.attrs["Data_Standard_Version"] = "0.0.1"
+        with pytest.raises(ValueError, match="Data_Standard_Version"):
+            archiver.snapshot("GUNB", group=f)
+    assert calls["n"] == 0
+
+
+def test_snapshot_group_failure_leaves_target_unchanged(archiver, tmp_path, monkeypatch):
+    _install_fake_epics(lambda pvs, timeout=None: [1.0] * len(pvs))
+
+    out = tmp_path / "keep.h5"
+    archiver.snapshot("GUNB", path=out)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(archiver, "_write_sample", boom)
+    with h5py.File(out, "a") as f:
+        before_ids, before_keys = _ids(f), set(f.keys())
+        with pytest.raises(RuntimeError, match="write failed"):
+            archiver.snapshot("GUNB", group=f)
+        assert _ids(f) == before_ids
+        assert set(f.keys()) == before_keys
+
+
+def test_snapshot_group_on_fresh_group_rolls_back_root_attrs(archiver, tmp_path, monkeypatch):
+    _install_fake_epics(lambda pvs, timeout=None: [1.0] * len(pvs))
+    monkeypatch.setattr(archiver, "_write_sample", lambda *a, **k: 1 / 0)
+
+    with h5py.File(tmp_path / "fresh.h5", "w") as f:
+        with pytest.raises(ZeroDivisionError):
+            archiver.snapshot("GUNB", group=f)
+        assert "IDs" not in f.attrs
+        assert "Data_Standard_Version" not in f.attrs
+        assert len(f.keys()) == 0
+
+
+@pytest.mark.parametrize("use_path, use_group", [(True, True), (False, False)])
+def test_snapshot_requires_exactly_one_target(archiver, tmp_path, use_path, use_group):
+    with h5py.File(tmp_path / "t.h5", "w") as f:
+        kwargs = {}
+        if use_path:
+            kwargs["path"] = tmp_path / "p.h5"
+        if use_group:
+            kwargs["group"] = f
+        with pytest.raises(ValueError, match="exactly one of path or group"):
+            archiver.snapshot("GUNB", **kwargs)
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [

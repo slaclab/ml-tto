@@ -31,6 +31,27 @@ continuous(
 Exactly one of `n_samples` / `duration_s` must be set for `continuous`.
 Both entry points return the output `Path`.
 
+### Appending snapshots to an existing file
+
+Pass an open, writable `h5py.File` (or `h5py.Group`) as `group=` instead
+of `path=`. Each call adds a new batch and appends its ID to the group's
+`@IDs`; the new batch group is returned.
+
+```python
+import h5py
+from ml_tto.archiving import snapshot
+
+with h5py.File("/data/gb/gun_snaps.h5", "a") as f:
+    snapshot("GUN", group=f, notes="before quad change")
+    # ... change something ...
+    snapshot("GUN", group=f, notes="after quad change")
+```
+
+The group is treated as the spec root, so pass the file itself to get a
+spec-conformant file. An existing `@Data_Standard_Version` that differs
+from `0.1.2` is rejected before any PVs are read. If a snapshot fails,
+the file is left as it was (no partial batch, `@IDs` unchanged).
+
 ## What gets archived
 
 For each area, PVs come from `slac_db.device.get_all_accessors(device)` —

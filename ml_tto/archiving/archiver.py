@@ -25,6 +25,7 @@ import json
 import logging
 import math
 import time
+import uuid
 from pathlib import Path
 from typing import Iterable, Union
 
@@ -121,11 +122,50 @@ def _missing_fill(d: h5py.Dataset):
 
 
 def _new_batch_id(source: str) -> str:
-    return hashlib.md5(f"{source}|{_isotime()}".encode()).hexdigest()
+    # uuid4 keeps IDs unique when several batches land in one file quickly.
+    return hashlib.md5(f"{source}|{_isotime()}|{uuid.uuid4()}".encode()).hexdigest()
 
 
-def _open_file_and_batch(
-    path: Path,
+def _decode(s) -> str:
+    return s.decode() if isinstance(s, bytes) else str(s)
+
+
+def _check_root(root: h5py.Group) -> None:
+    if root.file.mode == "r":
+        raise ValueError("Target group's file is open read-only.")
+    existing = root.attrs.get("Data_Standard_Version")
+    if existing is not None and _decode(existing) != _DATA_STANDARD_VERSION:
+        raise ValueError(
+            f"Target group has Data_Standard_Version {_decode(existing)!r}; "
+            f"this archiver writes {_DATA_STANDARD_VERSION!r}."
+        )
+
+
+def _root_ids(root: h5py.Group) -> list[str]:
+    raw = root.attrs.get("IDs")
+    if raw is None:
+        return []
+    return [_decode(s) for s in np.atleast_1d(raw)]
+
+
+def _register_batch(root: h5py.Group, batch_id: str) -> None:
+    root.attrs["Data_Standard_Version"] = _DATA_STANDARD_VERSION
+    root.attrs["IDs"] = np.array(
+        _root_ids(root) + [batch_id], dtype=h5py.string_dtype("utf-8")
+    )
+
+
+def _restore_root(root: h5py.Group, had_version: bool, prior_ids: list[str] | None) -> None:
+    if prior_ids is None:
+        root.attrs.pop("IDs", None)
+    else:
+        root.attrs["IDs"] = np.array(prior_ids, dtype=h5py.string_dtype("utf-8"))
+    if not had_version:
+        root.attrs.pop("Data_Standard_Version", None)
+
+
+def _write_batch_attrs(
+    batch: h5py.Group,
     batch_id: str,
     n_samples: int,
     source: str,
@@ -133,13 +173,8 @@ def _open_file_and_batch(
     metadata: dict | None,
     missing_pvs: list[str],
     requested_rate_hz: float | None,
-    duration_s: float | None = None,
-) -> tuple[h5py.File, h5py.Group]:
-    f = h5py.File(path, "w")
-    f.attrs["Data_Standard_Version"] = _DATA_STANDARD_VERSION
-    f.attrs["IDs"] = np.array([batch_id], dtype=h5py.string_dtype("utf-8"))
-
-    batch = f.create_group(batch_id)
+    duration_s: float | None,
+) -> None:
     batch.attrs["Data_Standard_Version"] = _DATA_STANDARD_VERSION
     batch.attrs["ID"] = batch_id
     batch.attrs["batch_dims"] = np.array([n_samples], dtype=np.int64)
@@ -156,7 +191,6 @@ def _open_file_and_batch(
     if duration_s is not None:
         note_payload["duration_s_requested"] = duration_s
     batch.attrs["run_information_notes"] = json.dumps(note_payload)
-    return f, batch
 
 
 def _create_pv_dataset(
@@ -255,7 +289,8 @@ def _run(
     areas: Union[str, Iterable[str]],
     extra_pvs: Iterable[str],
     *,
-    path: Union[str, Path],
+    path: Union[str, Path, None],
+    container: h5py.Group | None,
     n_samples: int,
     rate_hz: float | None,
     duration_s: float | None,
@@ -264,8 +299,9 @@ def _run(
     metadata: dict | None,
     caget_timeout: float,
     include_inactive: bool,
-) -> Path:
-    path = Path(path)
+) -> Union[Path, h5py.Group]:
+    if container is not None:
+        _check_root(container)
     pv_loc = _resolve_pvs(areas, extra_pvs, include_inactive)
     if not pv_loc:
         raise ValueError("No PVs resolved for the requested areas / extras.")
@@ -281,23 +317,71 @@ def _run(
     if not kept_pv_loc:
         raise RuntimeError("All PVs returned None on first read; nothing to archive.")
 
-    batch_id = _new_batch_id(run_source)
-    f, batch = _open_file_and_batch(
-        path=path,
-        batch_id=batch_id,
+    archive_kwargs = dict(
+        kept_pv_loc=kept_pv_loc,
+        kept_values=kept_values,
+        first_ts=first_ts,
+        missing=missing,
         n_samples=n_samples,
-        source=run_source,
+        rate_hz=rate_hz,
+        duration_s=duration_s,
+        run_source=run_source,
         notes=notes,
         metadata=metadata,
-        missing_pvs=missing,
-        requested_rate_hz=rate_hz,
-        duration_s=duration_s,
+        caget_timeout=caget_timeout,
     )
+    if container is not None:
+        return _archive_into(container, rollback_on_failure=True, **archive_kwargs)
+
+    path = Path(path)
+    with h5py.File(path, "w") as f:
+        _archive_into(f, rollback_on_failure=False, **archive_kwargs)
+    return path
+
+
+def _archive_into(
+    root: h5py.Group,
+    *,
+    kept_pv_loc: list[tuple[str, str]],
+    kept_values: list,
+    first_ts: str,
+    missing: list[str],
+    n_samples: int,
+    rate_hz: float | None,
+    duration_s: float | None,
+    run_source: str,
+    notes: str,
+    metadata: dict | None,
+    caget_timeout: float,
+    rollback_on_failure: bool,
+) -> h5py.Group:
+    """Write one batch under ``root`` and register it in ``root``'s ``@IDs``.
+
+    With ``rollback_on_failure``, an exception before any row is committed
+    deletes the batch and restores ``root``'s attrs, leaving it unchanged.
+    """
+    had_version = "Data_Standard_Version" in root.attrs
+    prior_ids = _root_ids(root) if "IDs" in root.attrs else None
+    batch_id = _new_batch_id(run_source)
+    batch = root.create_group(batch_id)
+
     ts_dset: h5py.Dataset | None = None
     datasets: dict[str, h5py.Dataset] = {}
     rows_written = 0
     clean_exit = False
     try:
+        _register_batch(root, batch_id)
+        _write_batch_attrs(
+            batch,
+            batch_id=batch_id,
+            n_samples=n_samples,
+            source=run_source,
+            notes=notes,
+            metadata=metadata,
+            missing_pvs=missing,
+            requested_rate_hz=rate_hz,
+            duration_s=duration_s,
+        )
         obs = batch.create_group("observables")
         ts_dset = _create_timestamp_dataset(obs, n_samples)
         for (pv, loc), v in zip(kept_pv_loc, kept_values):
@@ -347,13 +431,14 @@ def _run(
                 )
         clean_exit = True
     finally:
-        try:
+        if rollback_on_failure and not clean_exit and rows_written == 0:
+            del root[batch_id]
+            _restore_root(root, had_version, prior_ids)
+        else:
             _truncate_to_written(
                 batch, ts_dset, datasets, rows_written, n_samples, clean_exit
             )
-        finally:
-            f.close()
-    return path
+    return batch
 
 
 def _truncate_to_written(
@@ -403,18 +488,32 @@ def snapshot(
     areas: Union[str, Iterable[str]],
     extra_pvs: Iterable[str] = (),
     *,
-    path: Union[str, Path],
+    path: Union[str, Path, None] = None,
+    group: h5py.Group | None = None,
     run_source: str = "LCLS",
     notes: str = "",
     metadata: dict | None = None,
     caget_timeout: float = 10.0,
     include_inactive: bool = False,
-) -> Path:
-    """Read every PV once and write a single-sample Cropp-spec HDF5 file."""
+) -> Union[Path, h5py.Group]:
+    """Read every PV once and write a single-sample Cropp-spec batch.
+
+    Give exactly one of:
+
+    - ``path``: create (overwrite) a new file; returns the ``Path``.
+    - ``group``: an open, writable ``h5py.File`` or ``h5py.Group`` to append
+      a new batch to; returns the new batch group. ``group`` is treated as
+      the spec root: its ``@IDs`` is extended and ``@Data_Standard_Version``
+      is set if absent (a different existing version raises). If the
+      snapshot fails, ``group`` is left unchanged.
+    """
+    if (path is None) == (group is None):
+        raise ValueError("Provide exactly one of path or group.")
     return _run(
         areas,
         extra_pvs,
         path=path,
+        container=group,
         n_samples=1,
         rate_hz=None,
         duration_s=None,
@@ -467,6 +566,7 @@ def continuous(
         areas,
         extra_pvs,
         path=path,
+        container=None,
         n_samples=n_samples,
         rate_hz=rate_hz,
         duration_s=duration_s,
